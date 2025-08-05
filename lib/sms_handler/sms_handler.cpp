@@ -45,8 +45,8 @@ void SmsHandler::processMessageBlock(const String& block) {
         Serial.println("收到单条短信:");
         Serial.print("  发件人: ");
         Serial.println(pdu.getSender());
-        Serial.print("  时间戳: ");
-        Serial.println(pdu.getTimeStamp());
+        Serial.print("  接收时间: ");
+        Serial.println(formatTimestamp(pdu.getTimeStamp()));
         Serial.print("  消息内容: ");
         Serial.println(pdu.getText());
         Serial.println("----------");
@@ -56,6 +56,8 @@ void SmsHandler::processMessageBlock(const String& block) {
 void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
     Serial.printf("正在拼接消息, 引用号: %d...\n", refNum);
     String fullMessage = "";
+    String sender = "";
+    String timestamp = "";
     auto& sms = smsCache[refNum];
 
     // 按顺序拼接所有分片的用户数据部分
@@ -63,12 +65,22 @@ void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
         PDU pduPart;
         if (pduPart.decodePDU(sms.parts[i].c_str())) {
             fullMessage += pduPart.getText();
+            // 从第一个分片获取发送人和时间戳信息
+            if (i == 1) {
+                sender = pduPart.getSender();
+                timestamp = pduPart.getTimeStamp();
+            }
         } else {
             Serial.printf("解码分片 %d 失败，跳过此分片。\n", i);
         }
     }
 
-    Serial.println("完整消息内容:");
+    Serial.println("收到完整长短信:");
+    Serial.print("  发件人: ");
+    Serial.println(sender);
+    Serial.print("  接收时间: ");
+    Serial.println(formatTimestamp(timestamp));
+    Serial.print("  消息内容: ");
     Serial.println(fullMessage);
     Serial.println("----------");
 
@@ -83,4 +95,40 @@ void SmsHandler::readMessage(int messageIndex) {
     Serial.print("正在读取短信，索引: ");
     Serial.println(messageIndex);
     simSerial.print("AT+CMGR=" + String(messageIndex) + "\r\n");
+}
+
+/**
+ * @brief 将PDU时间戳转换为可读的日期时间格式
+ * @param pduTimestamp PDU格式的时间戳字符串 (YYMMDDhhmmss)
+ * @return 格式化的日期时间字符串 (YYYY-MM-DD HH:mm:ss)
+ */
+String SmsHandler::formatTimestamp(const String& pduTimestamp) {
+    // PDU时间戳格式: YYMMDDhhmmss (12位数字)
+    if (pduTimestamp.length() < 12) {
+        return "时间格式错误";
+    }
+    
+    // 提取各个时间组件
+    String year = pduTimestamp.substring(0, 2);
+    String month = pduTimestamp.substring(2, 4);
+    String day = pduTimestamp.substring(4, 6);
+    String hour = pduTimestamp.substring(6, 8);
+    String minute = pduTimestamp.substring(8, 10);
+    String second = pduTimestamp.substring(10, 12);
+    
+    // 转换年份 (假设20xx年)
+    int yearInt = year.toInt();
+    if (yearInt >= 0 && yearInt <= 99) {
+        yearInt += 2000;
+    }
+    
+    // 格式化为可读格式: YYYY-MM-DD HH:mm:ss
+    String formattedTime = String(yearInt) + "-" + 
+                          (month.length() == 1 ? "0" + month : month) + "-" +
+                          (day.length() == 1 ? "0" + day : day) + " " +
+                          (hour.length() == 1 ? "0" + hour : hour) + ":" +
+                          (minute.length() == 1 ? "0" + minute : minute) + ":" +
+                          (second.length() == 1 ? "0" + second : second);
+    
+    return formattedTime;
 }

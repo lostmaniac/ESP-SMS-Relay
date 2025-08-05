@@ -20,6 +20,13 @@ public:
 private:
     void readMessage(int messageIndex);
     void assembleAndProcessSms(uint8_t refNum);
+    
+    /**
+     * @brief 将PDU时间戳转换为可读的日期时间格式
+     * @param pduTimestamp PDU格式的时间戳字符串 (YYMMDDhhmmss)
+     * @return 格式化的日期时间字符串 (YYYY-MM-DD HH:mm:ss)
+     */
+    String formatTimestamp(const String& pduTimestamp);
 
     // 使用map来缓存不同参考号的长短信
     std::map<uint8_t, ConcatenatedSms> smsCache;

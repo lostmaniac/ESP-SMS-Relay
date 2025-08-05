@@ -19,7 +19,7 @@ TestManager::TestManager() : initialized(false), completedTests(0) {
     config.testPhoneNumber = "1008611";
     config.testSmsNumber = "+8610086";
     config.testSmsContent = "TEST";
-    config.callDuration = 5;
+    config.callDuration = 5;  // 修改为5秒
     config.enableDetailedLog = true;
     config.testTimeout = 30000;
     

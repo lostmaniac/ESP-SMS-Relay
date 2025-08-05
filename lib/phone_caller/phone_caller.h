@@ -101,6 +101,13 @@ private:
      * @return false 格式错误
      */
     bool validatePhoneNumber(const String& phone_number);
+    
+    /**
+     * @brief 检查通话状态
+     * @return true 无通话进行中
+     * @return false 有通话进行中
+     */
+    bool checkCallStatus();
 };
 
 #endif // PHONE_CALLER_H
