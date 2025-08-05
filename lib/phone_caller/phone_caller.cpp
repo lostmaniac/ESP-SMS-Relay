@@ -120,10 +120,10 @@ PhoneCallResult PhoneCaller::makeCallAndWait(const String& phone_number, int wai
         return result;
     }
     
-    Serial.println("[PhoneCaller] 电话拨打成功，开始等待 5 秒...");
+    Serial.println("[PhoneCaller] 电话拨打成功，开始等待 7 秒...");
     
-    // 等待5秒，每秒显示倒计时
-    for (int i = 5; i > 0; i--) {
+    // 等待7秒，每秒显示倒计时
+    for (int i = 7; i > 0; i--) {
         Serial.println("[PhoneCaller] 倒计时: " + String(i) + " 秒");
         delay(1000);
     }
