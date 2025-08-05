@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "uart_monitor.h"
 #include "sms_sender.h"
+#include "phone_caller.h"
 
 extern HardwareSerial simSerial;
 
@@ -51,58 +52,94 @@ void sendTestSms(const String& scaAddress)
         return;
     }
 
-    // 创建短信发送器实例
-    if (!g_sms_sender) {
-        g_sms_sender = new SmsSender(200); // 200字节缓冲区
-        if (!g_sms_sender) {
-            Serial.println("错误: 无法创建短信发送器实例");
-            return;
-        }
-    }
+    // // 创建短信发送器实例
+    // if (!g_sms_sender) {
+    //     g_sms_sender = new SmsSender(200); // 200字节缓冲区
+    //     if (!g_sms_sender) {
+    //         Serial.println("错误: 无法创建短信发送器实例");
+    //         return;
+    //     }
+    // }
     
-    // 初始化短信发送器
-    if (!g_sms_sender->initialize(scaAddress)) {
-        Serial.printf("短信发送器初始化失败: %s\n", g_sms_sender->getLastError().c_str());
-        return;
-    }
+    // // 初始化短信发送器
+    // if (!g_sms_sender->initialize(scaAddress)) {
+    //     Serial.printf("短信发送器初始化失败: %s\n", g_sms_sender->getLastError().c_str());
+    //     return;
+    // }
     
-    Serial.println("=== 开始短信发送测试 ===");
+    // Serial.println("=== 开始短信发送测试 ===");
     
-    // 1. 发送文本模式测试短信（纯英文数字）
-    Serial.println("\n--- 测试1: 文本模式短信 ---");
-    SmsSendResult textResult = g_sms_sender->sendTextSms("+8610086", "YE");
+    // // 1. 发送文本模式测试短信（纯英文数字）
+    // Serial.println("\n--- 测试1: 文本模式短信 ---");
+    // SmsSendResult textResult = g_sms_sender->sendTextSms("+8610086", "YE");
     
-    switch (textResult) {
-        case SMS_SUCCESS:
-            Serial.println("文本模式短信发送成功！");
+    // switch (textResult) {
+    //     case SMS_SUCCESS:
+    //         Serial.println("文本模式短信发送成功！");
+    //         break;
+    //     case SMS_ERROR_NETWORK_NOT_READY:
+    //         Serial.println("文本模式短信发送失败: 网络未就绪");
+    //         break;
+    //     case SMS_ERROR_SCA_NOT_SET:
+    //         Serial.println("文本模式短信发送失败: 短信中心号码未设置");
+    //         break;
+    //     case SMS_ERROR_ENCODE_FAILED:
+    //         Serial.println("文本模式短信发送失败: 编码失败");
+    //         break;
+    //     case SMS_ERROR_AT_COMMAND_FAILED:
+    //         Serial.println("文本模式短信发送失败: AT命令执行失败");
+    //         break;
+    //     case SMS_ERROR_SEND_TIMEOUT:
+    //         Serial.println("文本模式短信发送失败: 发送超时");
+    //         break;
+    //     case SMS_ERROR_INVALID_PARAMETER:
+    //         Serial.println("文本模式短信发送失败: 参数无效");
+    //         break;
+    //     default:
+    //         Serial.println("文本模式短信发送失败: 未知错误");
+    //         break;
+    // }
+    
+    // if (textResult != SMS_SUCCESS) {
+    //     Serial.printf("文本模式详细错误信息: %s\n", g_sms_sender->getLastError().c_str());
+    // }
+    // Serial.println("\n=== 短信发送测试完成 ===");
+    
+    // 短信发送完成后，拨打电话测试
+    Serial.println("\n=== 开始电话拨打测试 ===");
+    PhoneCaller phone_caller;
+    
+    PhoneCallResult callResult = phone_caller.makeCallAndWait("1008611", 5);
+    
+    switch (callResult) {
+        case CALL_SUCCESS:
+            Serial.println("电话拨打测试成功！");
             break;
-        case SMS_ERROR_NETWORK_NOT_READY:
-            Serial.println("文本模式短信发送失败: 网络未就绪");
+        case CALL_ERROR_NETWORK_NOT_READY:
+            Serial.println("电话拨打失败: 网络未就绪");
             break;
-        case SMS_ERROR_SCA_NOT_SET:
-            Serial.println("文本模式短信发送失败: 短信中心号码未设置");
+        case CALL_ERROR_INVALID_NUMBER:
+            Serial.println("电话拨打失败: 号码格式无效");
             break;
-        case SMS_ERROR_ENCODE_FAILED:
-            Serial.println("文本模式短信发送失败: 编码失败");
+        case CALL_ERROR_AT_COMMAND_FAILED:
+            Serial.println("电话拨打失败: AT命令执行失败");
             break;
-        case SMS_ERROR_AT_COMMAND_FAILED:
-            Serial.println("文本模式短信发送失败: AT命令执行失败");
+        case CALL_ERROR_CALL_TIMEOUT:
+            Serial.println("电话拨打失败: 拨打超时");
             break;
-        case SMS_ERROR_SEND_TIMEOUT:
-            Serial.println("文本模式短信发送失败: 发送超时");
-            break;
-        case SMS_ERROR_INVALID_PARAMETER:
-            Serial.println("文本模式短信发送失败: 参数无效");
+        case CALL_ERROR_HANGUP_FAILED:
+            Serial.println("电话拨打失败: 挂断失败");
             break;
         default:
-            Serial.println("文本模式短信发送失败: 未知错误");
+            Serial.println("电话拨打失败: 未知错误");
             break;
     }
     
-    if (textResult != SMS_SUCCESS) {
-        Serial.printf("文本模式详细错误信息: %s\n", g_sms_sender->getLastError().c_str());
+    if (callResult != CALL_SUCCESS) {
+        Serial.printf("电话拨打详细错误信息: %s\n", phone_caller.getLastError().c_str());
     }
-    Serial.println("\n=== 短信发送测试完成 ===");
+    
+    Serial.println("\n=== 电话拨打测试完成 ===");
 }
 
 /**
