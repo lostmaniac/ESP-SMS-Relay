@@ -4,6 +4,9 @@
 // 引用外部声明的串口对象
 extern HardwareSerial simSerial;
 
+// 企业微信机器人webhook地址
+const String SmsHandler::WECHAT_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=753ca375-1904-4bcf-928f-817941b15f36";
+
 void SmsHandler::processLine(const String& line) {
     if (line.startsWith("+CMTI:")) {
         Serial.println("收到新短信通知，准备读取...");
@@ -42,14 +45,21 @@ void SmsHandler::processMessageBlock(const String& block) {
         }
     } else {
         // 这是一个单条短信
+        String sender = pdu.getSender();
+        String content = pdu.getText();
+        String timestamp = pdu.getTimeStamp();
+        
         Serial.println("收到单条短信:");
         Serial.print("  发件人: ");
-        Serial.println(pdu.getSender());
+        Serial.println(sender);
         Serial.print("  接收时间: ");
-        Serial.println(formatTimestamp(pdu.getTimeStamp()));
+        Serial.println(formatTimestamp(timestamp));
         Serial.print("  消息内容: ");
-        Serial.println(pdu.getText());
+        Serial.println(content);
         Serial.println("----------");
+        
+        // 处理完整短信（存储到数据库并推送到企业微信）
+        processSmsComplete(sender, content, timestamp);
     }
 }
 
@@ -83,6 +93,9 @@ void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
     Serial.print("  消息内容: ");
     Serial.println(fullMessage);
     Serial.println("----------");
+    
+    // 处理完整短信（存储到数据库并推送到企业微信）
+    processSmsComplete(sender, fullMessage, timestamp);
 
     // 清理此消息的缓存
     smsCache.erase(refNum);
@@ -131,4 +144,115 @@ String SmsHandler::formatTimestamp(const String& pduTimestamp) {
                           (second.length() == 1 ? "0" + second : second);
     
     return formattedTime;
+}
+
+/**
+ * @brief 处理完整的短信（存储到数据库并推送到企业微信）
+ * @param sender 发送方号码
+ * @param content 短信内容
+ * @param timestamp 接收时间戳
+ */
+void SmsHandler::processSmsComplete(const String& sender, const String& content, const String& timestamp) {
+    Serial.println("开始处理完整短信...");
+    
+    // 存储到数据库
+    int recordId = storeSmsToDatabase(sender, content, timestamp);
+    if (recordId > 0) {
+        Serial.printf("短信已存储到数据库，记录ID: %d\n", recordId);
+    } else {
+        Serial.println("警告: 短信存储到数据库失败");
+    }
+    
+    // 推送到企业微信
+    if (pushToWechatBot(sender, content, timestamp)) {
+        Serial.println("短信已推送到企业微信机器人");
+    } else {
+        Serial.println("警告: 推送到企业微信机器人失败");
+    }
+}
+
+/**
+ * @brief 存储短信到数据库
+ * @param sender 发送方号码
+ * @param content 短信内容
+ * @param timestamp 接收时间戳
+ * @return int 记录ID，-1表示失败
+ */
+int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, const String& timestamp) {
+    DatabaseManager& dbManager = DatabaseManager::getInstance();
+    
+    // 检查数据库是否就绪
+    if (!dbManager.isReady()) {
+        Serial.println("数据库未就绪，无法存储短信");
+        return -1;
+    }
+    
+    // 创建短信记录
+    SMSRecord record;
+    record.fromNumber = sender;
+    record.toNumber = ""; // 接收方号码（本机号码，可以从配置中获取）
+    record.content = content;
+    record.receivedAt = formatTimestamp(timestamp);
+    record.forwardedAt = "";
+    record.ruleId = 0; // 暂时设为0，后续可以根据转发规则设置
+    record.forwarded = false;
+    record.status = "received";
+    
+    // 添加到数据库
+    int recordId = dbManager.addSMSRecord(record);
+    if (recordId > 0) {
+        Serial.printf("短信记录已添加到数据库，ID: %d\n", recordId);
+    } else {
+        Serial.println("添加短信记录到数据库失败: " + dbManager.getLastError());
+    }
+    
+    return recordId;
+}
+
+/**
+ * @brief 推送短信到企业微信机器人
+ * @param sender 发送方号码
+ * @param content 短信内容
+ * @param timestamp 接收时间戳
+ * @return true 推送成功
+ * @return false 推送失败
+ */
+bool SmsHandler::pushToWechatBot(const String& sender, const String& content, const String& timestamp) {
+    HttpClient& httpClient = HttpClient::getInstance();
+    
+    // 检查HTTP客户端是否已初始化
+    if (!httpClient.initialize()) {
+        Serial.println("HTTP客户端初始化失败: " + httpClient.getLastError());
+        return false;
+    }
+    
+    // 构建企业微信消息体（JSON格式）
+    String messageBody = "{\"msgtype\":\"text\",\"text\":{\"content\":\"📱 收到新短信\\n\\n";
+    messageBody += "📞 发送方: " + sender + "\\n";
+    messageBody += "🕐 时间: " + formatTimestamp(timestamp) + "\\n";
+    messageBody += "📄 内容: " + content + "\"}}";
+    
+    // 设置请求头
+    std::map<String, String> headers;
+    headers["Content-Type"] = "application/json";
+    
+    Serial.println("正在推送到企业微信机器人...");
+    Serial.println("请求体: " + messageBody);
+    
+    // 发送POST请求
+    HttpResponse response = httpClient.post(WECHAT_WEBHOOK_URL, messageBody, headers, 30000);
+    
+    // 简化的响应处理逻辑 - 只检查HTTP状态码
+    Serial.printf("HTTP响应 - 状态码: %d, 错误码: %d\n", response.statusCode, response.error);
+    Serial.println("响应内容: " + response.body);
+    
+    // 根据AT命令+HTTPACTION响应，只需检查状态码是否为200
+    if (response.statusCode == 200) {
+        Serial.println("✅ 企业微信推送成功（状态码200）");
+        return true;
+    } else {
+        Serial.printf("❌ 企业微信推送失败，状态码: %d, 错误码: %d\n", response.statusCode, response.error);
+        Serial.println("HTTP错误: " + httpClient.getLastError());
+        return false;
+    }
 }

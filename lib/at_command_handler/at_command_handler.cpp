@@ -211,17 +211,47 @@ AtResponse AtCommandHandler::waitForResponse(const String& expectedResponse,
     response.result = AT_RESULT_TIMEOUT;
     
     unsigned long startTime = millis();
+    String rawResponse = "";
+    unsigned long lastCharTime = startTime;
+    bool hasData = false;
     
     debugPrint("等待响应: " + expectedResponse);
     
-    String rawResponse = readResponse(timeout);
+    // 优化的等待逻辑：一旦收到期望响应就立即返回
+    while (millis() - startTime < timeout) {
+        if (serialPort.available()) {
+            char c = serialPort.read();
+            rawResponse += c;
+            lastCharTime = millis();
+            hasData = true;
+            
+            // 检查是否收到期望响应
+            if (rawResponse.indexOf(expectedResponse) != -1) {
+                // 等待一小段时间确保完整响应
+                delay(50);
+                // 读取剩余数据
+                while (serialPort.available()) {
+                    rawResponse += (char)serialPort.read();
+                }
+                response.result = AT_RESULT_SUCCESS;
+                debugPrint("收到期望响应: " + rawResponse);
+                break;
+            }
+        } else if (hasData && (millis() - lastCharTime > 200)) {
+            // 如果已经有数据且200ms内没有新数据，检查是否包含期望响应
+            if (rawResponse.indexOf(expectedResponse) != -1) {
+                response.result = AT_RESULT_SUCCESS;
+                debugPrint("收到期望响应: " + rawResponse);
+                break;
+            }
+        }
+        vTaskDelay(1); // 让出CPU时间
+    }
+    
     response.response = rawResponse;
     response.duration = millis() - startTime;
     
-    if (rawResponse.indexOf(expectedResponse) != -1) {
-        response.result = AT_RESULT_SUCCESS;
-        debugPrint("收到期望响应: " + rawResponse);
-    } else {
+    if (response.result != AT_RESULT_SUCCESS) {
         setError("未收到期望响应: " + expectedResponse + ", 实际响应: " + rawResponse);
     }
     
@@ -271,17 +301,31 @@ void AtCommandHandler::setDebugMode(bool enabled) {
 String AtCommandHandler::readResponse(unsigned long timeout) {
     unsigned long startTime = millis();
     String response = "";
+    unsigned long lastCharTime = startTime;
+    bool hasData = false;
     
     while (millis() - startTime < timeout) {
         if (serialPort.available()) {
             char c = serialPort.read();
             response += c;
+            lastCharTime = millis();
+            hasData = true;
             
-            // 检查是否收到完整行
-            if (c == '\n') {
-                // 简单处理，可以根据需要优化
-                delay(10); // 等待可能的后续字符
+            // 检查是否收到完整响应（以OK、ERROR或特定响应结束）
+            if (response.indexOf("OK\r\n") != -1 || 
+                response.indexOf("ERROR\r\n") != -1 ||
+                response.indexOf("+HTTPACTION:") != -1) {
+                // 等待一小段时间确保没有更多数据
+                delay(50);
+                // 读取剩余数据
+                while (serialPort.available()) {
+                    response += (char)serialPort.read();
+                }
+                break;
             }
+        } else if (hasData && (millis() - lastCharTime > 100)) {
+            // 如果已经有数据且100ms内没有新数据，认为响应完成
+            break;
         }
         vTaskDelay(1); // 让出CPU时间
     }
