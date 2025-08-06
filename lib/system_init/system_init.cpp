@@ -12,6 +12,7 @@
 #include "log_manager.h"
 #include "../network_config/network_config.h"
 #include "../filesystem_manager/filesystem_manager.h"
+#include "../database_manager/database_manager.h"
 #include <Arduino.h>
 
 /**
@@ -50,7 +51,14 @@ bool SystemInit::initialize(bool runTests) {
         return true;
     }
     
-    // 首先初始化日志管理器
+    // 首先初始化配置管理器
+    ConfigManager& configManager = ConfigManager::getInstance();
+    if (!configManager.initialize()) {
+        Serial.println("配置管理器初始化失败");
+        return false;
+    }
+    
+    // 然后初始化日志管理器
     LogManager& logManager = LogManager::getInstance();
     if (!logManager.initialize()) {
         Serial.println("日志管理器初始化失败");
@@ -80,6 +88,67 @@ bool SystemInit::initialize(bool runTests) {
     LOG_INFO(LOG_MODULE_SYSTEM, "文件系统总空间: " + String(fsInfo.totalBytes) + " 字节");
     LOG_INFO(LOG_MODULE_SYSTEM, "文件系统已使用: " + String(fsInfo.usedBytes) + " 字节 (" + String(fsInfo.usagePercent, 1) + "%)");
     LOG_INFO(LOG_MODULE_SYSTEM, "文件系统可用空间: " + String(fsInfo.freeBytes) + " 字节");
+    
+    // 打印/littlefs目录下的所有文件
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在扫描/littlefs目录下的文件...");
+    File root = LittleFS.open("/");
+    if (!root) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "无法打开/littlefs根目录");
+    } else if (!root.isDirectory()) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "/littlefs根路径不是目录");
+        root.close();
+    } else {
+        int fileCount = 0;
+        File file = root.openNextFile();
+        while (file) {
+            if (file.isDirectory()) {
+                LOG_INFO(LOG_MODULE_SYSTEM, "  [目录] " + String(file.name()));
+            } else {
+                LOG_INFO(LOG_MODULE_SYSTEM, "  [文件] " + String(file.name()) + " (" + String(file.size()) + " 字节)");
+            }
+            fileCount++;
+            file.close();
+            file = root.openNextFile();
+        }
+        root.close();
+        if (fileCount == 0) {
+            LOG_INFO(LOG_MODULE_SYSTEM, "/littlefs目录为空");
+        } else {
+            LOG_INFO(LOG_MODULE_SYSTEM, "/littlefs目录下共有 " + String(fileCount) + " 个项目");
+        }
+    }
+    
+    // 测试data目录文件访问
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在测试文件系统访问...");
+    if (filesystemManager.fileExists("/test.txt")) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "test.txt文件存在于根目录");
+    } else {
+        LOG_INFO(LOG_MODULE_SYSTEM, "test.txt文件不存在于根目录");
+    }
+    
+    // 初始化数据库
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在初始化数据库...");
+    DatabaseManager& databaseManager = DatabaseManager::getInstance();
+    databaseManager.setDebugMode(true); // 启用调试模式
+    
+    if (!databaseManager.initialize("sms_relay.db")) {
+        setError("数据库初始化失败: " + databaseManager.getLastError());
+        setSystemStatus(SYSTEM_ERROR);
+        return false;
+    }
+    
+    // 打印数据库信息
+    DatabaseInfo dbInfo = databaseManager.getDatabaseInfo();
+    LOG_INFO(LOG_MODULE_SYSTEM, "数据库初始化成功");
+    LOG_INFO(LOG_MODULE_SYSTEM, "数据库路径: " + dbInfo.dbPath);
+    LOG_INFO(LOG_MODULE_SYSTEM, "数据库大小: " + String(dbInfo.dbSize) + " 字节");
+    LOG_INFO(LOG_MODULE_SYSTEM, "数据库表数量: " + String(dbInfo.tableCount));
+    LOG_INFO(LOG_MODULE_SYSTEM, "数据库记录总数: " + String(dbInfo.recordCount));
+    
+    // 获取并显示AP配置信息
+    APConfig apConfig = databaseManager.getAPConfig();
+    LOG_INFO(LOG_MODULE_SYSTEM, "AP配置 - SSID: " + apConfig.ssid + ", 密码: " + apConfig.password + ", 启用: " + String(apConfig.enabled ? "是" : "否"));
+    LOG_INFO(LOG_MODULE_SYSTEM, "AP配置 - 信道: " + String(apConfig.channel) + ", 最大连接数: " + String(apConfig.maxConnections));
     
     // 获取模块管理器实例
     ModuleManager& moduleManager = ModuleManager::getInstance();

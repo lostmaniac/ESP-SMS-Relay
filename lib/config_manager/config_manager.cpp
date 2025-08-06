@@ -105,7 +105,7 @@ bool ConfigManager::loadConfig() {
         systemConfig.enableDebug = preferences.getBool("sys_debug", true);
         systemConfig.runTestsOnStartup = preferences.getBool("sys_test", true);
         systemConfig.watchdogTimeout = preferences.getULong("sys_watchdog", 60000);
-        systemConfig.logLevel = preferences.getInt("sys_log_level", 2);
+        systemConfig.logLevel = preferences.getInt("sys_log_level", 3);
         systemConfig.deviceName = preferences.getString("sys_name", "ESP-SMS-Relay");
         
         Serial.println("配置加载完成");

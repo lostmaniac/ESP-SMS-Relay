@@ -102,17 +102,17 @@ bool FilesystemManager::initialize(bool formatOnFail) {
  * @return false 挂载失败
  */
 bool FilesystemManager::mount() {
-    debugPrint("正在挂载LittleFS文件系统...");
+    debugPrint("正在挂载LittleFS文件系统到/littlefs目录...");
     
-    // 挂载LittleFS到根目录，不自动格式化
-    if (!LittleFS.begin(false)) {
+    // 挂载LittleFS到/littlefs目录，不自动格式化，指定分区名称
+    if (!LittleFS.begin(false, "/littlefs", 10, "littlefs")) {
         setError("LittleFS挂载失败");
         fsInfo.mounted = false;
         return false;
     }
     
     fsInfo.mounted = true;
-    debugPrint("LittleFS文件系统挂载成功");
+    debugPrint("LittleFS文件系统挂载到/littlefs目录成功");
     return true;
 }
 
