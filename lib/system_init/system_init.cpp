@@ -11,6 +11,7 @@
 #include "config_manager.h"
 #include "log_manager.h"
 #include "../network_config/network_config.h"
+#include "../filesystem_manager/filesystem_manager.h"
 #include <Arduino.h>
 
 /**
@@ -61,6 +62,24 @@ bool SystemInit::initialize(bool runTests) {
     
     setSystemStatus(SYSTEM_INITIALIZING);
     LOG_INFO(LOG_MODULE_SYSTEM, "开始系统初始化");
+    
+    // 初始化文件系统
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在初始化文件系统...");
+    FilesystemManager& filesystemManager = FilesystemManager::getInstance();
+    filesystemManager.setDebugMode(true); // 启用调试模式
+    
+    if (!filesystemManager.initialize(true)) {
+        setError("文件系统初始化失败: " + filesystemManager.getLastError());
+        setSystemStatus(SYSTEM_ERROR);
+        return false;
+    }
+    
+    // 打印文件系统信息
+    FilesystemInfo fsInfo = filesystemManager.getFilesystemInfo();
+    LOG_INFO(LOG_MODULE_SYSTEM, "文件系统初始化成功");
+    LOG_INFO(LOG_MODULE_SYSTEM, "文件系统总空间: " + String(fsInfo.totalBytes) + " 字节");
+    LOG_INFO(LOG_MODULE_SYSTEM, "文件系统已使用: " + String(fsInfo.usedBytes) + " 字节 (" + String(fsInfo.usagePercent, 1) + "%)");
+    LOG_INFO(LOG_MODULE_SYSTEM, "文件系统可用空间: " + String(fsInfo.freeBytes) + " 字节");
     
     // 获取模块管理器实例
     ModuleManager& moduleManager = ModuleManager::getInstance();
