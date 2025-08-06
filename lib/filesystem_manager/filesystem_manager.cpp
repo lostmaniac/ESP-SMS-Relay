@@ -55,10 +55,10 @@ bool FilesystemManager::initialize(bool formatOnFail) {
         return true;
     }
     
-    debugPrint("开始初始化SPIFFS文件系统...");
+    debugPrint("开始初始化LittleFS文件系统...");
     status = FILESYSTEM_INITIALIZING;
     
-    // 尝试挂载SPIFFS
+    // 尝试挂载LittleFS
     if (!mount()) {
         if (formatOnFail) {
             debugPrint("挂载失败，尝试格式化文件系统...");
@@ -87,7 +87,7 @@ bool FilesystemManager::initialize(bool formatOnFail) {
     initialized = true;
     status = FILESYSTEM_READY;
     
-    debugPrint("SPIFFS文件系统初始化成功");
+    debugPrint("LittleFS文件系统初始化成功");
     debugPrint("总空间: " + String(fsInfo.totalBytes) + " 字节");
     debugPrint("已使用: " + String(fsInfo.usedBytes) + " 字节");
     debugPrint("可用空间: " + String(fsInfo.freeBytes) + " 字节");
@@ -102,17 +102,17 @@ bool FilesystemManager::initialize(bool formatOnFail) {
  * @return false 挂载失败
  */
 bool FilesystemManager::mount() {
-    debugPrint("正在挂载SPIFFS文件系统...");
+    debugPrint("正在挂载LittleFS文件系统...");
     
-    // 挂载SPIFFS到根目录，不自动格式化
-    if (!SPIFFS.begin(false)) {
-        setError("SPIFFS挂载失败");
+    // 挂载LittleFS到根目录，不自动格式化
+    if (!LittleFS.begin(false)) {
+        setError("LittleFS挂载失败");
         fsInfo.mounted = false;
         return false;
     }
     
     fsInfo.mounted = true;
-    debugPrint("SPIFFS文件系统挂载成功");
+    debugPrint("LittleFS文件系统挂载成功");
     return true;
 }
 
@@ -122,14 +122,14 @@ bool FilesystemManager::mount() {
  * @return false 卸载失败
  */
 bool FilesystemManager::unmount() {
-    debugPrint("正在卸载SPIFFS文件系统...");
+    debugPrint("正在卸载LittleFS文件系统...");
     
-    SPIFFS.end();
+    LittleFS.end();
     fsInfo.mounted = false;
     status = FILESYSTEM_NOT_INITIALIZED;
     initialized = false;
     
-    debugPrint("SPIFFS文件系统卸载完成");
+    debugPrint("LittleFS文件系统卸载完成");
     return true;
 }
 
@@ -139,23 +139,23 @@ bool FilesystemManager::unmount() {
  * @return false 格式化失败
  */
 bool FilesystemManager::format() {
-    debugPrint("开始格式化SPIFFS文件系统...");
+    debugPrint("开始格式化LittleFS文件系统...");
     status = FILESYSTEM_FORMATTING;
     
     // 如果已挂载，先卸载
     if (fsInfo.mounted) {
-        SPIFFS.end();
+        LittleFS.end();
         fsInfo.mounted = false;
     }
     
-    // 格式化SPIFFS
-    if (!SPIFFS.format()) {
-        setError("SPIFFS格式化失败");
+    // 格式化LittleFS
+    if (!LittleFS.format()) {
+        setError("LittleFS格式化失败");
         status = FILESYSTEM_ERROR;
         return false;
     }
     
-    debugPrint("SPIFFS文件系统格式化完成");
+    debugPrint("LittleFS文件系统格式化完成");
     return true;
 }
 
@@ -199,7 +199,7 @@ bool FilesystemManager::fileExists(const String& path) {
         return false;
     }
     
-    return SPIFFS.exists(path);
+    return LittleFS.exists(path);
 }
 
 /**
@@ -214,14 +214,27 @@ bool FilesystemManager::createDirectory(const String& path) {
         return false;
     }
     
-    // SPIFFS不支持真正的目录，但可以通过文件路径模拟
-    // 这里只是检查路径格式的有效性
+    // LittleFS支持真正的目录结构
     if (path.length() == 0 || !path.startsWith("/")) {
         setError("无效的目录路径");
         return false;
     }
     
-    debugPrint("目录路径已验证: " + path);
+    // 创建目录
+    if (!LittleFS.mkdir(path)) {
+        // 检查目录是否已存在
+        File dir = LittleFS.open(path);
+        if (dir && dir.isDirectory()) {
+            dir.close();
+            debugPrint("目录已存在: " + path);
+            return true;
+        }
+        dir.close();
+        setError("创建目录失败: " + path);
+        return false;
+    }
+    
+    debugPrint("目录创建成功: " + path);
     return true;
 }
 
@@ -237,12 +250,12 @@ bool FilesystemManager::deleteFile(const String& path) {
         return false;
     }
     
-    if (!SPIFFS.exists(path)) {
+    if (!LittleFS.exists(path)) {
         setError("文件不存在: " + path);
         return false;
     }
     
-    if (!SPIFFS.remove(path)) {
+    if (!LittleFS.remove(path)) {
         setError("删除文件失败: " + path);
         return false;
     }
@@ -272,7 +285,7 @@ void FilesystemManager::setDebugMode(bool enabled) {
  * @return fs::FS& 文件系统引用
  */
 fs::FS& FilesystemManager::getFS() {
-    return SPIFFS;
+    return LittleFS;
 }
 
 /**
@@ -308,8 +321,8 @@ void FilesystemManager::updateFilesystemInfo() {
         return;
     }
     
-    fsInfo.totalBytes = SPIFFS.totalBytes();
-    fsInfo.usedBytes = SPIFFS.usedBytes();
+    fsInfo.totalBytes = LittleFS.totalBytes();
+    fsInfo.usedBytes = LittleFS.usedBytes();
     fsInfo.freeBytes = fsInfo.totalBytes - fsInfo.usedBytes;
     
     if (fsInfo.totalBytes > 0) {

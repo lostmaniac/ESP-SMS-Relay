@@ -71,135 +71,20 @@ void filesystem_usage_example() {
         Serial.println("无法打开文件进行读取");
     }
     
-    // 创建配置文件示例
-    String configPath = "/config/system.conf";
-    Serial.println("\n创建配置文件: " + configPath);
-    
-    // 创建目录（SPIFFS中目录是虚拟的）
-    fs.createDirectory("/config");
-    
-    File configFile = fs.getFS().open(configPath, "w");
-    if (configFile) {
-        configFile.println("# 系统配置文件");
-        configFile.println("debug_mode=true");
-        configFile.println("log_level=INFO");
-        configFile.println("network_timeout=30000");
-        configFile.println("sms_retry_count=3");
-        configFile.close();
-        Serial.println("配置文件创建成功");
-    } else {
-        Serial.println("配置文件创建失败");
-    }
-    
-    // 列出根目录下的文件
-    Serial.println("\n根目录文件列表:");
-    File root = fs.getFS().open("/");
-    if (root && root.isDirectory()) {
-        File file = root.openNextFile();
-        while (file) {
-            if (file.isDirectory()) {
-                Serial.println("  [目录] " + String(file.name()));
-            } else {
-                Serial.println("  [文件] " + String(file.name()) + " (" + String(file.size()) + " 字节)");
-            }
-            file = root.openNextFile();
-        }
-        root.close();
-    }
-    
-    // 更新文件系统信息
-    info = fs.getFilesystemInfo();
-    Serial.println("\n更新后的文件系统信息:");
-    Serial.println("已使用: " + String(info.usedBytes) + " 字节");
-    Serial.println("可用空间: " + String(info.freeBytes) + " 字节");
-    Serial.println("使用率: " + String(info.usagePercent, 1) + "%");
-    
-    // 清理测试文件（可选）
-    Serial.println("\n清理测试文件...");
-    if (fs.deleteFile(testFilePath)) {
+    // 删除测试文件
+    Serial.println("\n--- 删除测试文件 ---");
+    if (fs.getFS().remove(testFilePath)) {
         Serial.println("测试文件删除成功");
     } else {
-        Serial.println("测试文件删除失败: " + fs.getLastError());
+        Serial.println("测试文件删除失败");
+    }
+    
+    // 验证文件是否已删除
+    if (!fs.fileExists(testFilePath)) {
+        Serial.println("确认: 测试文件已不存在");
+    } else {
+        Serial.println("警告: 测试文件仍然存在");
     }
     
     Serial.println("\n=== 文件系统示例完成 ===");
-}
-
-/**
- * @brief 创建日志文件示例
- */
-void create_log_file_example() {
-    Serial.println("\n=== 创建日志文件示例 ===");
-    
-    FilesystemManager& fs = FilesystemManager::getInstance();
-    
-    if (!fs.isReady()) {
-        Serial.println("文件系统未就绪");
-        return;
-    }
-    
-    // 创建日志文件
-    String logPath = "/logs/system.log";
-    fs.createDirectory("/logs");
-    
-    File logFile = fs.getFS().open(logPath, "a"); // 追加模式
-    if (logFile) {
-        String timestamp = String(millis());
-        logFile.println("[" + timestamp + "] 系统启动");
-        logFile.println("[" + timestamp + "] 文件系统初始化完成");
-        logFile.println("[" + timestamp + "] 开始运行主程序");
-        logFile.close();
-        Serial.println("日志文件创建成功: " + logPath);
-    } else {
-        Serial.println("日志文件创建失败");
-    }
-}
-
-/**
- * @brief 文件系统性能测试
- */
-void filesystem_performance_test() {
-    Serial.println("\n=== 文件系统性能测试 ===");
-    
-    FilesystemManager& fs = FilesystemManager::getInstance();
-    
-    if (!fs.isReady()) {
-        Serial.println("文件系统未就绪");
-        return;
-    }
-    
-    // 写入性能测试
-    unsigned long startTime = millis();
-    String perfTestPath = "/perf_test.txt";
-    
-    File perfFile = fs.getFS().open(perfTestPath, "w");
-    if (perfFile) {
-        for (int i = 0; i < 100; i++) {
-            perfFile.println("性能测试行 " + String(i) + " - 这是一个较长的测试字符串用于测试写入性能");
-        }
-        perfFile.close();
-        
-        unsigned long writeTime = millis() - startTime;
-        Serial.println("写入100行数据耗时: " + String(writeTime) + " 毫秒");
-        
-        // 读取性能测试
-        startTime = millis();
-        perfFile = fs.getFS().open(perfTestPath, "r");
-        if (perfFile) {
-            int lineCount = 0;
-            while (perfFile.available()) {
-                String line = perfFile.readStringUntil('\n');
-                lineCount++;
-            }
-            perfFile.close();
-            
-            unsigned long readTime = millis() - startTime;
-            Serial.println("读取" + String(lineCount) + "行数据耗时: " + String(readTime) + " 毫秒");
-        }
-        
-        // 清理测试文件
-        fs.deleteFile(perfTestPath);
-    }
-    
-    Serial.println("=== 性能测试完成 ===");
 }

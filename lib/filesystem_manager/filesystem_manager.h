@@ -5,7 +5,7 @@
  * @date 2024
  * 
  * 该模块负责:
- * 1. SPIFFS文件系统的初始化和挂载
+ * 1. LittleFS文件系统的初始化和挂载
  * 2. 文件系统状态监控
  * 3. 文件系统操作的统一接口
  * 4. 文件系统错误处理
@@ -15,7 +15,7 @@
 #define FILESYSTEM_MANAGER_H
 
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <FS.h>
 
 /**
@@ -46,7 +46,7 @@ struct FilesystemInfo {
  * @class FilesystemManager
  * @brief 文件系统管理器类
  * 
- * 负责SPIFFS文件系统的统一管理和操作
+ * 负责LittleFS文件系统的统一管理和操作
  */
 class FilesystemManager {
 public:
