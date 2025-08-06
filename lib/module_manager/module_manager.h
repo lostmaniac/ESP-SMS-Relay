@@ -20,6 +20,8 @@
 class SmsSender;
 class PhoneCaller;
 class SmsHandler;
+class HttpClient;
+class AtCommandHandler;
 
 /**
  * @enum ModuleStatus
@@ -39,6 +41,8 @@ enum ModuleStatus {
  */
 enum ModuleType {
     MODULE_GSM_BASIC,       ///< GSM基础模块
+    MODULE_AT_COMMAND,      ///< AT命令处理模块
+    MODULE_HTTP_CLIENT,     ///< HTTP客户端模块
     MODULE_SMS_SENDER,      ///< 短信发送模块
     MODULE_PHONE_CALLER,    ///< 电话拨打模块
     MODULE_SMS_HANDLER,     ///< 短信处理模块
@@ -153,6 +157,20 @@ private:
     bool initSmsHandlerModule();
     
     /**
+     * @brief 初始化AT命令处理模块
+     * @return true 初始化成功
+     * @return false 初始化失败
+     */
+    bool initAtCommandModule();
+    
+    /**
+     * @brief 初始化HTTP客户端模块
+     * @return true 初始化成功
+     * @return false 初始化失败
+     */
+    bool initHttpClientModule();
+    
+    /**
      * @brief 初始化串口监听模块
      * @return true 初始化成功
      * @return false 初始化失败
@@ -191,5 +209,17 @@ PhoneCaller* getPhoneCaller();
  * @return SmsHandler* 短信处理器指针，如果未初始化则返回nullptr
  */
 SmsHandler* getSmsHandler();
+
+/**
+ * @brief 获取HTTP客户端实例
+ * @return HttpClient* HTTP客户端指针，如果未初始化则返回nullptr
+ */
+HttpClient* getHttpClient();
+
+/**
+ * @brief 获取AT命令处理器实例
+ * @return AtCommandHandler* AT命令处理器指针，如果未初始化则返回nullptr
+ */
+AtCommandHandler* getAtCommandHandler();
 
 #endif // MODULE_MANAGER_H

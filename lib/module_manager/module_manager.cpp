@@ -11,8 +11,14 @@
 #include "phone_caller.h"
 #include "../uart_monitor/uart_monitor.h"
 #include "test_manager.h"
+#include "at_command_handler.h"
+#include "http_client.h"
 #include "config_manager.h"
+#include "config.h"
 #include <Arduino.h>
+
+// 外部串口声明
+extern HardwareSerial simSerial;
 
 // 前向声明SmsHandler以避免重复包含pdulib.h
 class SmsHandler;
@@ -24,6 +30,8 @@ extern HardwareSerial simSerial;
 static SmsSender* g_sms_sender = nullptr;
 static PhoneCaller* g_phone_caller = nullptr;
 static SmsHandler* g_sms_handler = nullptr;
+static AtCommandHandler* g_at_command_handler = nullptr;
+static HttpClient* g_http_client = nullptr;
 
 /**
  * @brief 构造函数
@@ -52,6 +60,14 @@ ModuleManager::~ModuleManager() {
     if (g_sms_handler) {
         delete g_sms_handler;
         g_sms_handler = nullptr;
+    }
+    if (g_at_command_handler) {
+        delete g_at_command_handler;
+        g_at_command_handler = nullptr;
+    }
+    if (g_http_client) {
+        delete g_http_client;
+        g_http_client = nullptr;
     }
 }
 
@@ -85,8 +101,18 @@ bool ModuleManager::initializeAllModules() {
     configManager.printConfig();
     
     // 按依赖顺序初始化模块
+    if (!initializeModule(MODULE_AT_COMMAND)) {
+        setError("AT命令处理模块初始化失败");
+        return false;
+    }
+    
     if (!initializeModule(MODULE_GSM_BASIC)) {
         setError("GSM基础模块初始化失败");
+        return false;
+    }
+    
+    if (!initializeModule(MODULE_HTTP_CLIENT)) {
+        setError("HTTP客户端模块初始化失败");
         return false;
     }
     
@@ -125,8 +151,14 @@ bool ModuleManager::initializeModule(ModuleType moduleType) {
     
     bool result = false;
     switch (moduleType) {
+        case MODULE_AT_COMMAND:
+            result = initAtCommandModule();
+            break;
         case MODULE_GSM_BASIC:
             result = initGsmBasicModule();
+            break;
+        case MODULE_HTTP_CLIENT:
+            result = initHttpClientModule();
             break;
         case MODULE_SMS_SENDER:
             result = initSmsSenderModule();
@@ -156,6 +188,33 @@ bool ModuleManager::initializeModule(ModuleType moduleType) {
 }
 
 /**
+ * @brief 初始化AT命令处理模块
+ * @return true 初始化成功
+ * @return false 初始化失败
+ */
+bool ModuleManager::initAtCommandModule() {
+    Serial.println("正在初始化AT命令处理模块...");
+    
+    // 创建AT命令处理器实例
+    if (!g_at_command_handler) {
+        g_at_command_handler = new AtCommandHandler(simSerial);
+        if (!g_at_command_handler) {
+            setError("无法创建AT命令处理器实例");
+            return false;
+        }
+    }
+    
+    // 初始化AT命令处理器
+    if (!g_at_command_handler->initialize()) {
+        setError("AT命令处理器初始化失败: " + g_at_command_handler->getLastError());
+        return false;
+    }
+    
+    Serial.println("AT命令处理模块初始化完成。");
+    return true;
+}
+
+/**
  * @brief 初始化GSM基础模块
  * @return true 初始化成功
  * @return false 初始化失败
@@ -175,6 +234,39 @@ bool ModuleManager::initGsmBasicModule() {
 }
 
 /**
+ * @brief 初始化HTTP客户端模块
+ * @return true 初始化成功
+ * @return false 初始化失败
+ */
+bool ModuleManager::initHttpClientModule() {
+    Serial.println("正在初始化HTTP客户端模块...");
+    
+    // 检查依赖模块是否已初始化
+    if (!g_at_command_handler) {
+        setError("HTTP客户端模块依赖AT命令处理模块，但该模块未初始化");
+        return false;
+    }
+    
+    // 创建HTTP客户端实例
+    if (!g_http_client) {
+        g_http_client = new HttpClient(*g_at_command_handler, GsmService::getInstance());
+        if (!g_http_client) {
+            setError("无法创建HTTP客户端实例");
+            return false;
+        }
+    }
+    
+    // 初始化HTTP客户端
+    if (!g_http_client->initialize()) {
+        setError("HTTP客户端初始化失败: " + g_http_client->getLastError());
+        return false;
+    }
+    
+    Serial.println("HTTP客户端模块初始化完成。");
+    return true;
+}
+
+/**
  * @brief 初始化短信发送模块
  * @return true 初始化成功
  * @return false 初始化失败
@@ -185,12 +277,18 @@ bool ModuleManager::initSmsSenderModule() {
     // 获取GSM服务实例
     GsmService& gsmService = GsmService::getInstance();
     
-    // 获取短信中心号码
-    String scaAddress = gsmService.getSmsCenterNumber();
+    // 复用GSM服务中已获取的短信中心号码
+    String scaAddress = gsmService.smsCenterNumber;
     if (scaAddress.length() == 0) {
-        setError("无法获取短信中心号码");
-        return false;
+        // 如果GSM服务中没有，再尝试获取一次
+        scaAddress = gsmService.getSmsCenterNumber();
+        if (scaAddress.length() == 0) {
+            setError("无法获取短信中心号码");
+            return false;
+        }
     }
+    
+    Serial.printf("使用短信中心号码: %s\n", scaAddress.c_str());
     
     // 创建短信发送器实例
     if (!g_sms_sender) {
@@ -388,4 +486,20 @@ PhoneCaller* getPhoneCaller() {
  */
 SmsHandler* getSmsHandler() {
     return g_sms_handler;
+}
+
+/**
+ * @brief 获取AT命令处理器实例
+ * @return AtCommandHandler* AT命令处理器指针，如果未初始化则返回nullptr
+ */
+AtCommandHandler* getAtCommandHandler() {
+    return g_at_command_handler;
+}
+
+/**
+ * @brief 获取HTTP客户端实例
+ * @return HttpClient* HTTP客户端指针，如果未初始化则返回nullptr
+ */
+HttpClient* getHttpClient() {
+    return g_http_client;
 }

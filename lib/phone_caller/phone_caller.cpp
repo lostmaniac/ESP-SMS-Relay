@@ -241,32 +241,74 @@ bool PhoneCaller::checkCallStatus() {
  * @return false 网络未注册
  */
 bool PhoneCaller::isNetworkReady() {
-    // 发送网络注册状态查询命令
+    // 清空串口缓冲区
+    while (simSerial.available()) {
+        simSerial.read();
+    }
+    
+    // 发送AT+CREG?命令
     simSerial.println("AT+CREG?");
     
     unsigned long start_time = millis();
     String response = "";
     
-    // 等待响应，超时时间5秒
+    // 等待响应
     while (millis() - start_time < 5000) {
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
-            
-            // 检查是否收到完整响应
-            if (response.indexOf("OK") != -1) {
-                // 检查网络注册状态
-                // +CREG: 0,1 或 +CREG: 0,5 表示已注册
-                if (response.indexOf("+CREG: 0,1") != -1 || response.indexOf("+CREG: 0,5") != -1) {
-                    return true;
-                }
-                break;
-            }
         }
-        delay(10);
+        
+        // 检查是否收到完整响应
+        if (response.indexOf("OK") != -1 || response.indexOf("ERROR") != -1) {
+            break;
+        }
+        
+        vTaskDelay(1);
     }
     
-    return false;
+    // 解析CREG响应
+    int cregIndex = response.indexOf("+CREG:");
+    if (cregIndex == -1) {
+        Serial.println("[PhoneCaller] 未找到CREG响应");
+        return false;
+    }
+    
+    // 查找状态值（第二个逗号后的数字）
+    int firstCommaIndex = response.indexOf(',', cregIndex);
+    if (firstCommaIndex == -1) {
+        Serial.println("[PhoneCaller] CREG响应格式错误：未找到第一个逗号");
+        return false;
+    }
+    
+    int secondCommaIndex = response.indexOf(',', firstCommaIndex + 1);
+    int statusStart, statusEnd;
+    
+    if (secondCommaIndex != -1) {
+        // 扩展格式: +CREG: <n>,<stat>,<lac>,<ci>
+        statusStart = firstCommaIndex + 1;
+        statusEnd = secondCommaIndex;
+    } else {
+        // 基本格式: +CREG: <n>,<stat>
+        statusStart = firstCommaIndex + 1;
+        statusEnd = response.indexOf('\r', statusStart);
+        if (statusEnd == -1) {
+            statusEnd = response.indexOf('\n', statusStart);
+        }
+        if (statusEnd == -1) {
+            statusEnd = response.length();
+        }
+    }
+    
+    // 提取状态值
+    String statusStr = response.substring(statusStart, statusEnd);
+    statusStr.trim();
+    int status = statusStr.toInt();
+    
+    Serial.printf("[PhoneCaller] 网络注册状态: %d\n", status);
+    
+    // 状态1表示本地网络注册，状态5表示漫游网络注册
+    return (status == 1 || status == 5);
 }
 
 /**

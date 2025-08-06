@@ -92,9 +92,11 @@ bool GsmService::initialize() {
         Serial.println("配置短信通知失败，但不影响基础功能。");
     }
     
-    // 获取短信中心号码
+    // 获取短信中心号码（仅获取一次，后续模块可复用）
     smsCenterNumber = getSmsCenterNumber();
-    if (smsCenterNumber.length() == 0) {
+    if (smsCenterNumber.length() > 0) {
+        Serial.printf("成功获取短信中心号码: %s\n", smsCenterNumber.c_str());
+    } else {
         Serial.println("警告: 无法获取短信中心号码，短信功能可能受影响。");
     }
     
@@ -177,13 +179,31 @@ bool GsmService::waitForNetworkRegistration(unsigned long timeout) {
     unsigned long startTime = millis();
     
     while (millis() - startTime < timeout) {
-        if (sendAtCommand("AT+CREG?", "+CREG: 0,1", 5000) || 
-            sendAtCommand("AT+CREG?", "+CREG: 0,5", 5000)) {
+        // 获取当前网络状态
+        GsmNetworkStatus status = getNetworkStatus();
+        
+        // 检查是否已注册（本地网络或漫游网络）
+        if (status == GSM_NETWORK_REGISTERED_HOME || status == GSM_NETWORK_REGISTERED_ROAMING) {
             Serial.println("网络注册成功");
             return true;
         }
         
-        Serial.print(".");
+        // 输出当前状态信息
+        switch (status) {
+            case GSM_NETWORK_NOT_REGISTERED:
+                Serial.print("[未注册]");
+                break;
+            case GSM_NETWORK_SEARCHING:
+                Serial.print("[搜索中]");
+                break;
+            case GSM_NETWORK_REGISTRATION_DENIED:
+                Serial.print("[注册被拒绝]");
+                break;
+            default:
+                Serial.print("[未知状态]");
+                break;
+        }
+        
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
     
@@ -225,6 +245,39 @@ int GsmService::getSignalStrength() {
 bool GsmService::isSimCardReady() {
     String response = sendAtCommandWithResponse("AT+CPIN?", 3000);
     return response.indexOf("+CPIN: READY") != -1;
+}
+
+/**
+ * @brief 获取IMSI号码
+ * @return String IMSI号码，失败返回空字符串
+ */
+String GsmService::getImsi() {
+    String response = sendAtCommandWithResponse("AT+CIMI", 5000);
+    
+    // 查找IMSI号码（通常是15位数字）
+    int startIndex = -1;
+    for (int i = 0; i < response.length(); i++) {
+        if (isdigit(response.charAt(i))) {
+            startIndex = i;
+            break;
+        }
+    }
+    
+    if (startIndex != -1) {
+        String imsi = "";
+        for (int i = startIndex; i < response.length() && isdigit(response.charAt(i)); i++) {
+            imsi += response.charAt(i);
+        }
+        
+        // IMSI应该是15位数字
+        if (imsi.length() == 15) {
+            Serial.printf("成功获取IMSI: %s\n", imsi.c_str());
+            return imsi;
+        }
+    }
+    
+    Serial.println("获取IMSI失败。");
+    return "";
 }
 
 /**
@@ -332,18 +385,34 @@ void GsmService::clearSerialBuffer() {
  * @return GsmNetworkStatus 网络状态
  */
 GsmNetworkStatus GsmService::parseNetworkStatus(const String& response) {
-    // 解析响应 +CREG: <n>,<stat>
+    // 解析响应 +CREG: <n>,<stat>[,<lac>,<ci>]
+    // 支持基本格式和扩展格式
     int cregIndex = response.indexOf("+CREG:");
     if (cregIndex != -1) {
-        int commaIndex = response.indexOf(',', cregIndex);
-        if (commaIndex != -1) {
-            int statusStart = commaIndex + 1;
-            int statusEnd = response.indexOf('\n', statusStart);
-            if (statusEnd == -1) statusEnd = response.length();
+        // 查找第一个逗号（分隔n和stat）
+        int firstCommaIndex = response.indexOf(',', cregIndex);
+        if (firstCommaIndex != -1) {
+            // 查找第二个逗号（分隔stat和lac，如果存在）
+            int secondCommaIndex = response.indexOf(',', firstCommaIndex + 1);
             
-            String statusStr = response.substring(statusStart, statusEnd);
+            // 确定状态值的结束位置
+            int statusEnd;
+            if (secondCommaIndex != -1) {
+                // 扩展格式：+CREG: <n>,<stat>,<lac>,<ci>
+                statusEnd = secondCommaIndex;
+            } else {
+                // 基本格式：+CREG: <n>,<stat>
+                statusEnd = response.indexOf('\n', firstCommaIndex);
+                if (statusEnd == -1) statusEnd = response.length();
+            }
+            
+            // 提取状态值
+            String statusStr = response.substring(firstCommaIndex + 1, statusEnd);
             statusStr.trim();
             int status = statusStr.toInt();
+            
+            // 调试输出
+            Serial.printf("解析CREG响应: %s, 状态值: %d\n", response.c_str(), status);
             
             switch (status) {
                 case 0: return GSM_NETWORK_NOT_REGISTERED;

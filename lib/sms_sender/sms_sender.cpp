@@ -246,14 +246,79 @@ String SmsSender::getLastError() const {
 }
 
 /**
- * @brief 检查网络状态
+ * @brief 检查网络是否就绪
  * @return true 网络已注册
  * @return false 网络未注册
  */
 bool SmsSender::isNetworkReady() {
-    // 检查网络注册状态
-    return sendAtCommand("AT+CREG?", "+CREG: 0,1", 3000) || 
-           sendAtCommand("AT+CREG?", "+CREG: 0,5", 3000);
+    // 清空串口缓冲区
+    while (simSerial.available()) {
+        simSerial.read();
+    }
+    
+    // 发送AT+CREG?命令
+    simSerial.println("AT+CREG?");
+    
+    unsigned long start_time = millis();
+    String response = "";
+    
+    // 等待响应
+    while (millis() - start_time < 3000) {
+        if (simSerial.available()) {
+            char c = simSerial.read();
+            response += c;
+        }
+        
+        // 检查是否收到完整响应
+        if (response.indexOf("OK") != -1 || response.indexOf("ERROR") != -1) {
+            break;
+        }
+        
+        vTaskDelay(1);
+    }
+    
+    // 解析CREG响应
+    int cregIndex = response.indexOf("+CREG:");
+    if (cregIndex == -1) {
+        Serial.println("未找到CREG响应");
+        return false;
+    }
+    
+    // 查找状态值（第二个逗号后的数字）
+    int firstCommaIndex = response.indexOf(',', cregIndex);
+    if (firstCommaIndex == -1) {
+        Serial.println("CREG响应格式错误：未找到第一个逗号");
+        return false;
+    }
+    
+    int secondCommaIndex = response.indexOf(',', firstCommaIndex + 1);
+    int statusStart, statusEnd;
+    
+    if (secondCommaIndex != -1) {
+        // 扩展格式: +CREG: <n>,<stat>,<lac>,<ci>
+        statusStart = firstCommaIndex + 1;
+        statusEnd = secondCommaIndex;
+    } else {
+        // 基本格式: +CREG: <n>,<stat>
+        statusStart = firstCommaIndex + 1;
+        statusEnd = response.indexOf('\r', statusStart);
+        if (statusEnd == -1) {
+            statusEnd = response.indexOf('\n', statusStart);
+        }
+        if (statusEnd == -1) {
+            statusEnd = response.length();
+        }
+    }
+    
+    // 提取状态值
+    String statusStr = response.substring(statusStart, statusEnd);
+    statusStr.trim();
+    int status = statusStr.toInt();
+    
+    Serial.printf("网络注册状态: %d\n", status);
+    
+    // 状态1表示本地网络注册，状态5表示漫游网络注册
+    return (status == 1 || status == 5);
 }
 
 /**

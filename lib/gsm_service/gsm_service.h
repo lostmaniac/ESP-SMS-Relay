@@ -118,6 +118,12 @@ public:
     bool isSimCardReady();
     
     /**
+     * @brief 获取IMSI号码
+     * @return String IMSI号码，失败返回空字符串
+     */
+    String getImsi();
+    
+    /**
      * @brief 获取短信中心号码
      * @return String 短信中心号码，失败返回空字符串
      */
@@ -167,11 +173,13 @@ public:
      * @return GsmService& 单例引用
      */
     static GsmService& getInstance();
+    
+    // 公共成员变量（供其他模块访问）
+    String smsCenterNumber;        ///< 短信中心号码（缓存，避免重复获取）
 
 private:
     GsmModuleStatus moduleStatus;   ///< 模块状态
     String lastError;              ///< 最后的错误信息
-    String smsCenterNumber;        ///< 短信中心号码
     bool initialized;              ///< 是否已初始化
     
     /**

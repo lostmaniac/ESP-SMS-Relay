@@ -10,6 +10,7 @@
 #include "../uart_monitor/uart_monitor.h"
 #include "config_manager.h"
 #include "log_manager.h"
+#include "../network_config/network_config.h"
 #include <Arduino.h>
 
 /**
@@ -80,6 +81,42 @@ bool SystemInit::initialize(bool runTests) {
     }
     
     LOG_INFO(LOG_MODULE_SYSTEM, "所有模块初始化完成");
+    
+    // 配置网络连接
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在配置网络连接...");
+    NetworkConfig& networkConfig = NetworkConfig::getInstance();
+    
+    // 初始化网络配置模块
+    if (!networkConfig.initialize()) {
+        setError("网络配置模块初始化失败: " + networkConfig.getLastError());
+        setSystemStatus(SYSTEM_ERROR);
+        return false;
+    }
+    
+    // 自动配置网络（识别运营商并配置APN）
+    NetworkConfigResult configResult = networkConfig.autoConfigureNetwork();
+    if (configResult.status != NETWORK_CONFIG_SUCCESS) {
+        LOG_WARN(LOG_MODULE_SYSTEM, "网络自动配置失败: " + configResult.errorMessage);
+        LOG_INFO(LOG_MODULE_SYSTEM, "尝试使用默认配置...");
+        
+        // 尝试使用默认配置
+        NetworkConfigResult defaultResult = networkConfig.configureNetwork(CARRIER_UNKNOWN);
+        if (defaultResult.status != NETWORK_CONFIG_SUCCESS) {
+            setError("网络配置失败，无法建立网络连接: " + defaultResult.errorMessage);
+            setSystemStatus(SYSTEM_ERROR);
+            return false;
+        }
+        configResult = defaultResult; // 使用默认配置结果
+    }
+    
+    LOG_INFO(LOG_MODULE_SYSTEM, "网络配置完成 - 运营商: " + configResult.carrierName + ", APN: " + configResult.apnConfig.apn);
+    
+    // 统一检查网络连接状态（避免重复检查）
+    if (networkConfig.isNetworkReady()) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "网络连接已建立，系统就绪");
+    } else {
+        LOG_WARN(LOG_MODULE_SYSTEM, "网络连接未完全建立，但系统将继续运行");
+    }
     
     // 运行测试（可选）
     if (runTests) {
