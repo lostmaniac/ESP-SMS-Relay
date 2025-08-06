@@ -21,14 +21,14 @@
 #include "gsm_service.h"
 
 /**
- * @enum HttpMethod
+ * @enum HttpClientMethod
  * @brief HTTP请求方法枚举
  */
-enum HttpMethod {
-    HTTP_GET = 0,       ///< GET请求
-    HTTP_POST = 1,      ///< POST请求
-    HTTP_PUT = 2,       ///< PUT请求
-    HTTP_DELETE = 3     ///< DELETE请求
+enum HttpClientMethod {
+    HTTP_CLIENT_GET = 0,       ///< GET请求
+    HTTP_CLIENT_POST = 1,      ///< POST请求
+    HTTP_CLIENT_PUT = 2,       ///< PUT请求
+    HTTP_CLIENT_DELETE = 3     ///< DELETE请求
 };
 
 /**
@@ -60,7 +60,7 @@ enum HttpClientError {
  */
 struct HttpRequest {
     String url;                         ///< 请求URL
-    HttpMethod method;                  ///< 请求方法
+    HttpClientMethod method;            ///< 请求方法
     HttpProtocol protocol;              ///< 协议类型
     std::map<String, String> headers;  ///< 请求头
     String body;                        ///< 请求体（POST/PUT使用）
@@ -70,7 +70,7 @@ struct HttpRequest {
      * @brief 构造函数
      */
     HttpRequest() : 
-        method(HTTP_GET), 
+        method(HTTP_CLIENT_GET), 
         protocol(HTTP_PROTOCOL), 
         timeout(30000) {}
 };
@@ -258,7 +258,7 @@ private:
      * @param timeout 超时时间
      * @return HttpResponse 响应结果
      */
-    HttpResponse executeHttpAction(HttpMethod method, unsigned long timeout);
+    HttpResponse executeHttpAction(HttpClientMethod method, unsigned long timeout);
     
     /**
      * @brief 发送HTTP数据（用于POST请求）
@@ -318,7 +318,7 @@ private:
      * @param method HTTP方法枚举
      * @return String 方法字符串
      */
-    String getMethodString(HttpMethod method);
+    String getMethodString(HttpClientMethod method);
 };
 
 #endif // HTTP_CLIENT_H

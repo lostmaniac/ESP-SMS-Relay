@@ -125,7 +125,7 @@ HttpResponse HttpClient::request(const HttpRequest& request) {
     }
     
     // 根据请求方法执行不同操作
-    if (request.method == HTTP_POST || request.method == HTTP_PUT) {
+    if (request.method == HTTP_CLIENT_POST || request.method == HTTP_CLIENT_PUT) {
         // POST/PUT请求需要先发送数据
         if (!request.body.isEmpty()) {
             if (!sendHttpData(request.body, request.timeout)) {
@@ -163,7 +163,7 @@ HttpResponse HttpClient::get(const String& url,
                             unsigned long timeout) {
     HttpRequest request;
     request.url = url;
-    request.method = HTTP_GET;
+    request.method = HTTP_CLIENT_GET;
     request.protocol = detectProtocol(url);
     request.headers = headers;
     request.timeout = timeout;
@@ -185,7 +185,7 @@ HttpResponse HttpClient::post(const String& url,
                              unsigned long timeout) {
     HttpRequest request;
     request.url = url;
-    request.method = HTTP_POST;
+    request.method = HTTP_CLIENT_POST;
     request.protocol = detectProtocol(url);
     request.body = body;
     request.headers = headers;
@@ -398,7 +398,7 @@ bool HttpClient::setHttpParameter(const String& parameter, const String& value) 
  * @param timeout 超时时间
  * @return HttpResponse 响应结果
  */
-HttpResponse HttpClient::executeHttpAction(HttpMethod method, unsigned long timeout) {
+HttpResponse HttpClient::executeHttpAction(HttpClientMethod method, unsigned long timeout) {
     HttpResponse response;
     
     String command = "AT+HTTPACTION=" + String((int)method);
@@ -595,12 +595,12 @@ void HttpClient::debugPrint(const String& message) {
  * @param method HTTP方法枚举
  * @return String 方法字符串
  */
-String HttpClient::getMethodString(HttpMethod method) {
+String HttpClient::getMethodString(HttpClientMethod method) {
     switch (method) {
-        case HTTP_GET: return "GET";
-        case HTTP_POST: return "POST";
-        case HTTP_PUT: return "PUT";
-        case HTTP_DELETE: return "DELETE";
+        case HTTP_CLIENT_GET: return "GET";
+    case HTTP_CLIENT_POST: return "POST";
+    case HTTP_CLIENT_PUT: return "PUT";
+    case HTTP_CLIENT_DELETE: return "DELETE";
         default: return "UNKNOWN";
     }
 }

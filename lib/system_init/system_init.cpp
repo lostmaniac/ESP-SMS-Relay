@@ -13,6 +13,8 @@
 #include "../network_config/network_config.h"
 #include "../filesystem_manager/filesystem_manager.h"
 #include "../database_manager/database_manager.h"
+#include "../wifi_manager/wifi_manager.h"
+#include "../web_server/web_server.h"
 #include <Arduino.h>
 
 /**
@@ -149,6 +151,51 @@ bool SystemInit::initialize(bool runTests) {
     APConfig apConfig = databaseManager.getAPConfig();
     LOG_INFO(LOG_MODULE_SYSTEM, "AP配置 - SSID: " + apConfig.ssid + ", 密码: " + apConfig.password + ", 启用: " + String(apConfig.enabled ? "是" : "否"));
     LOG_INFO(LOG_MODULE_SYSTEM, "AP配置 - 信道: " + String(apConfig.channel) + ", 最大连接数: " + String(apConfig.maxConnections));
+    
+    // 初始化并启动WiFi管理器
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在初始化WiFi管理器...");
+    WiFiManager& wifiManager = WiFiManager::getInstance();
+    wifiManager.setDebugMode(true); // 启用调试模式
+    
+    if (!wifiManager.initialize()) {
+        setError("WiFi管理器初始化失败: " + wifiManager.getLastError());
+        setSystemStatus(SYSTEM_ERROR);
+        return false;
+    }
+    
+    // 如果AP配置启用，则启动WiFi热点
+    if (apConfig.enabled) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "正在启动WiFi热点...");
+        if (!wifiManager.startAP()) {
+            LOG_WARN(LOG_MODULE_SYSTEM, "WiFi热点启动失败: " + wifiManager.getLastError());
+        } else {
+            WiFiConnectionInfo connInfo = wifiManager.getConnectionInfo();
+            LOG_INFO(LOG_MODULE_SYSTEM, "WiFi热点启动成功 - IP: " + connInfo.apIP + ", MAC: " + connInfo.apMAC);
+        }
+    } else {
+        LOG_INFO(LOG_MODULE_SYSTEM, "AP配置未启用，跳过WiFi热点启动");
+    }
+    
+    // 初始化并启动Web服务器
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在初始化Web服务器...");
+    WebServerManager& webServer = WebServerManager::getInstance();
+    webServer.setDebugMode(true); // 启用调试模式
+    
+    if (!webServer.initialize()) {
+        LOG_WARN(LOG_MODULE_SYSTEM, "Web服务器初始化失败: " + webServer.getLastError());
+    } else {
+        // 如果WiFi热点已激活，则启动Web服务器
+        if (wifiManager.isAPActive()) {
+            LOG_INFO(LOG_MODULE_SYSTEM, "正在启动Web服务器...");
+            if (!webServer.start()) {
+                LOG_WARN(LOG_MODULE_SYSTEM, "Web服务器启动失败: " + webServer.getLastError());
+            } else {
+                LOG_INFO(LOG_MODULE_SYSTEM, "Web服务器启动成功 - URL: " + webServer.getServerURL());
+            }
+        } else {
+            LOG_INFO(LOG_MODULE_SYSTEM, "WiFi热点未激活，Web服务器将在热点启动后自动启动");
+        }
+    }
     
     // 获取模块管理器实例
     ModuleManager& moduleManager = ModuleManager::getInstance();

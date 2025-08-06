@@ -251,7 +251,7 @@ bool HttpClientExample::customRequestExample() {
     // 创建自定义请求
     HttpRequest request;
     request.url = "http://httpbin.org/anything";
-    request.method = HTTP_POST;
+    request.method = HTTP_CLIENT_POST;
     request.protocol = HTTP_PROTOCOL;
     request.timeout = 15000; // 15秒超时
     

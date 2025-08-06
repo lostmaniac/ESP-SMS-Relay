@@ -14,6 +14,8 @@
 #include "system_init.h"
 #include "uart_monitor.h"
 #include "config.h"
+#include "../lib/wifi_manager/wifi_manager.h"
+#include "../lib/web_server/web_server.h"
 
 // 定义硬件串口
 HardwareSerial simSerial(SIM_SERIAL_NUM); // 使用配置的串口号
@@ -47,7 +49,7 @@ void setup() {
 /**
  * @brief 主循环函数
  * 
- * 系统运行后的主循环，负责系统状态监控
+ * 系统运行后的主循环，负责系统状态监控和事件处理
  */
 void loop() {
     // 获取系统状态
@@ -60,6 +62,26 @@ void loop() {
         systemInit.restart();
     }
     
-    // 主循环保持空闲，所有工作由任务处理
-    vTaskDelay(5000 / portTICK_PERIOD_MS); // 每5秒检查一次
+    // 如果系统正在运行，处理各模块事件
+    if (status == SYSTEM_RUNNING) {
+        // 处理WiFi管理器事件
+        WiFiManager& wifiManager = WiFiManager::getInstance();
+        wifiManager.handleEvents();
+        
+        // 处理Web服务器客户端请求
+        WebServerManager& webServer = WebServerManager::getInstance();
+        if (webServer.isRunning()) {
+            webServer.handleClient();
+        }
+    }
+    
+    // 短暂延迟，避免过度占用CPU
+    delay(10);
+    
+    // 每5秒进行一次系统状态检查
+    static unsigned long lastStatusCheck = 0;
+    if (millis() - lastStatusCheck > 5000) {
+        lastStatusCheck = millis();
+        // 这里可以添加定期的系统状态检查逻辑
+    }
 }
