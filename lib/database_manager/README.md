@@ -45,13 +45,14 @@ CREATE TABLE ap_config (
 ```sql
 CREATE TABLE forward_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,                -- 规则名称
-    source_number TEXT NOT NULL,       -- 源号码（支持通配符）
-    target_number TEXT NOT NULL,       -- 目标号码
-    keyword TEXT DEFAULT '',           -- 关键词过滤
-    enabled INTEGER DEFAULT 1,         -- 是否启用
-    created_at TEXT NOT NULL,          -- 创建时间
-    updated_at TEXT NOT NULL           -- 更新时间
+    rule_name TEXT NOT NULL,                    -- 规则名称
+    source_number TEXT DEFAULT '*',             -- 发送号码，可以为空，支持通配符
+    keywords TEXT,                              -- 关键词过滤
+    push_type TEXT NOT NULL DEFAULT 'webhook', -- 推送类型：企业微信群机器人，钉钉群机器人，webhook等
+    push_config TEXT NOT NULL DEFAULT '{}',    -- 推送配置为json格式，支持配置模板和变量
+    enabled INTEGER DEFAULT 1,                 -- 是否使用
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP  -- 修改时间
 );
 ```
 
@@ -59,14 +60,9 @@ CREATE TABLE forward_rules (
 ```sql
 CREATE TABLE sms_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_number TEXT NOT NULL,         -- 发送方号码
-    to_number TEXT NOT NULL,           -- 接收方号码
-    content TEXT NOT NULL,             -- 短信内容
-    received_at TEXT NOT NULL,         -- 接收时间
-    forwarded_at TEXT DEFAULT '',      -- 转发时间
-    rule_id INTEGER DEFAULT 0,         -- 应用的规则ID
-    forwarded INTEGER DEFAULT 0,       -- 是否已转发
-    status TEXT DEFAULT 'received'     -- 状态
+    from_number TEXT NOT NULL,     -- 发送方号码，支持索引
+    content TEXT NOT NULL,         -- 短信内容，支持索引
+    received_at INTEGER NOT NULL   -- 接收时间，time保存，支持索引，方便以后按照时间过滤短信
 );
 ```
 
@@ -124,10 +120,11 @@ if (dbManager.updateAPConfig(config)) {
 ```cpp
 // 添加转发规则
 ForwardRule rule;
-rule.name = "紧急短信转发";
+rule.ruleName = "紧急短信转发";
 rule.sourceNumber = "+86138*";        // 支持通配符
-rule.targetNumber = "+8613800000000";
-rule.keyword = "紧急";
+rule.pushType = "webhook";
+rule.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
+rule.keywords = "紧急";
 rule.enabled = true;
 
 int ruleId = dbManager.addForwardRule(rule);

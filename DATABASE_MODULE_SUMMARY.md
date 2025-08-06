@@ -50,13 +50,14 @@ CREATE TABLE ap_config (
 ```sql
 CREATE TABLE forward_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    source_number TEXT NOT NULL,
-    target_number TEXT NOT NULL,
-    keyword TEXT,
-    enabled BOOLEAN DEFAULT 1,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    rule_name TEXT NOT NULL,                    -- 规则名称
+    source_number TEXT DEFAULT '*',             -- 发送号码，可以为空，支持通配符
+    keywords TEXT,                              -- 关键词过滤
+    push_type TEXT NOT NULL DEFAULT 'webhook', -- 推送类型：企业微信群机器人，钉钉群机器人，webhook等
+    push_config TEXT NOT NULL DEFAULT '{}',    -- 推送配置为json格式，支持配置模板和变量
+    enabled INTEGER DEFAULT 1,                 -- 是否使用
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP  -- 修改时间
 );
 ```
 
@@ -64,15 +65,9 @@ CREATE TABLE forward_rules (
 ```sql
 CREATE TABLE sms_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_number TEXT NOT NULL,
-    to_number TEXT NOT NULL,
-    content TEXT NOT NULL,
-    rule_id INTEGER DEFAULT 0,
-    forwarded BOOLEAN DEFAULT 0,
-    status TEXT DEFAULT 'received',
-    received_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    forwarded_at TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    from_number TEXT NOT NULL,     -- 发送方号码，支持索引
+    content TEXT NOT NULL,         -- 短信内容，支持索引
+    received_at INTEGER NOT NULL   -- 接收时间，time保存，支持索引，方便以后按照时间过滤短信
 );
 ```
 
@@ -119,10 +114,11 @@ bool success = db.updateAPConfig(config);
 ```cpp
 // 添加转发规则
 ForwardRule rule;
-rule.name = "紧急联系人";
+rule.ruleName = "紧急联系人";
 rule.sourceNumber = "+86138*";
-rule.targetNumber = "+8613800000000";
-rule.keyword = "紧急";
+rule.pushType = "webhook";
+rule.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
+rule.keywords = "紧急";
 rule.enabled = true;
 
 int ruleId = db.addForwardRule(rule);

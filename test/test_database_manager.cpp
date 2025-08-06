@@ -168,10 +168,11 @@ void testForwardRuleManagement() {
     
     // 测试添加转发规则
     ForwardRule rule1;
-    rule1.name = "测试规则1";
+    rule1.ruleName = "测试规则1";
     rule1.sourceNumber = "+86138*";
-    rule1.targetNumber = "+8613800000000";
-    rule1.keyword = "紧急";
+    rule1.pushType = "webhook";
+    rule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
+    rule1.keywords = "紧急";
     rule1.enabled = true;
     
     int ruleId1 = db.addForwardRule(rule1);
@@ -179,10 +180,11 @@ void testForwardRuleManagement() {
     
     // 测试添加第二个规则
     ForwardRule rule2;
-    rule2.name = "测试规则2";
+    rule2.ruleName = "测试规则2";
     rule2.sourceNumber = "+86139*";
-    rule2.targetNumber = "+8613900000000";
-    rule2.keyword = "通知";
+    rule2.pushType = "wechat";
+    rule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
+    rule2.keywords = "通知";
     rule2.enabled = false;
     
     int ruleId2 = db.addForwardRule(rule2);
@@ -196,10 +198,10 @@ void testForwardRuleManagement() {
     // 测试根据ID获取规则
     ForwardRule retrievedRule1 = db.getForwardRuleById(ruleId1);
     ASSERT_EQUAL(ruleId1, retrievedRule1.id, "获取的规则ID应匹配");
-    ASSERT_EQUAL("测试规则1", retrievedRule1.name, "规则名称应匹配");
+    ASSERT_EQUAL("测试规则1", retrievedRule1.ruleName, "规则名称应匹配");
     ASSERT_EQUAL("+86138*", retrievedRule1.sourceNumber, "源号码应匹配");
-    ASSERT_EQUAL("+8613800000000", retrievedRule1.targetNumber, "目标号码应匹配");
-    ASSERT_EQUAL("紧急", retrievedRule1.keyword, "关键词应匹配");
+    ASSERT_EQUAL("webhook", retrievedRule1.pushType, "推送类型应匹配");
+    ASSERT_EQUAL("紧急", retrievedRule1.keywords, "关键词应匹配");
     ASSERT_TRUE(retrievedRule1.enabled, "启用状态应匹配");
     
     // 测试更新规则

@@ -69,18 +69,19 @@ void demonstrateForwardRules() {
     Serial.println("当前转发规则数量: " + String(existingRules.size()));
     
     for (const auto& rule : existingRules) {
-        Serial.println("  规则 #" + String(rule.id) + ": " + rule.name + 
-                      " (" + rule.sourceNumber + " -> " + rule.targetNumber + ")");
+        Serial.println("  规则 #" + String(rule.id) + ": " + rule.ruleName + 
+                      " (" + rule.sourceNumber + " -> " + rule.pushType + ")");
     }
     
     // 添加演示规则
     Serial.println("\n添加演示转发规则...");
     
     ForwardRule demoRule1;
-    demoRule1.name = "紧急联系人转发";
+    demoRule1.ruleName = "紧急联系人转发";
     demoRule1.sourceNumber = "+86138*";
-    demoRule1.targetNumber = "+8613800000000";
-    demoRule1.keyword = "紧急";
+    demoRule1.pushType = "webhook";
+    demoRule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
+    demoRule1.keywords = "紧急";
     demoRule1.enabled = true;
     
     int ruleId1 = db.addForwardRule(demoRule1);
@@ -91,10 +92,11 @@ void demonstrateForwardRules() {
     }
     
     ForwardRule demoRule2;
-    demoRule2.name = "工作通知转发";
+    demoRule2.ruleName = "工作通知转发";
     demoRule2.sourceNumber = "+86139*";
-    demoRule2.targetNumber = "+8613900000000";
-    demoRule2.keyword = "会议";
+    demoRule2.pushType = "wechat";
+    demoRule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
+    demoRule2.keywords = "会议";
     demoRule2.enabled = false;
     
     int ruleId2 = db.addForwardRule(demoRule2);
@@ -149,12 +151,9 @@ void demonstrateSMSRecords() {
     Serial.println("\n添加演示短信记录...");
     
     SMSRecord demoRecord1;
-    demoRecord1.fromNumber = "+8613800000001";
-    demoRecord1.toNumber = "+8613800000000";
+    demoRecord1.fromNumber = "+8613812345678";
     demoRecord1.content = "这是一条包含紧急关键词的测试短信";
-    demoRecord1.ruleId = 1;
-    demoRecord1.forwarded = false;
-    demoRecord1.status = "received";
+    demoRecord1.receivedAt = time(nullptr);
     
     int recordId1 = db.addSMSRecord(demoRecord1);
     if (recordId1 > 0) {
@@ -162,13 +161,9 @@ void demonstrateSMSRecords() {
     }
     
     SMSRecord demoRecord2;
-    demoRecord2.fromNumber = "+8613900000001";
-    demoRecord2.toNumber = "+8613900000000";
+    demoRecord2.fromNumber = "+8613987654321";
     demoRecord2.content = "这是一条关于会议通知的短信";
-    demoRecord2.ruleId = 2;
-    demoRecord2.forwarded = true;
-    demoRecord2.status = "forwarded";
-    demoRecord2.forwardedAt = String(millis());
+    demoRecord2.receivedAt = time(nullptr);
     
     int recordId2 = db.addSMSRecord(demoRecord2);
     if (recordId2 > 0) {
@@ -176,12 +171,9 @@ void demonstrateSMSRecords() {
     }
     
     SMSRecord demoRecord3;
-    demoRecord3.fromNumber = "+8613700000001";
-    demoRecord3.toNumber = "+8613700000000";
+    demoRecord3.fromNumber = "+8613711111111";
     demoRecord3.content = "普通短信，无需转发";
-    demoRecord3.ruleId = 0;
-    demoRecord3.forwarded = false;
-    demoRecord3.status = "received";
+    demoRecord3.receivedAt = time(nullptr);
     
     int recordId3 = db.addSMSRecord(demoRecord3);
     if (recordId3 > 0) {
@@ -192,12 +184,10 @@ void demonstrateSMSRecords() {
     Serial.println("\n最新短信记录:");
     std::vector<SMSRecord> latestRecords = db.getSMSRecords(5, 0);
     for (const auto& record : latestRecords) {
-        Serial.println("  #" + String(record.id) + ": " + record.fromNumber + 
-                      " -> " + record.toNumber);
+        Serial.println("  记录 #" + String(record.id) + ": 来自 " + record.fromNumber);
         Serial.println("    内容: " + record.content.substring(0, 30) + 
-                      (record.content.length() > 30 ? "..." : ""));
-        Serial.println("    状态: " + record.status + 
-                      (record.forwarded ? " (已转发)" : " (未转发)"));
+                        (record.content.length() > 30 ? "..." : ""));
+        Serial.println("    接收时间: " + String(record.receivedAt));
     }
     
     // 演示分页查询
@@ -217,15 +207,12 @@ void demonstrateSMSRecords() {
     if (recordId1 > 0) {
         Serial.println("\n更新记录演示...");
         SMSRecord recordToUpdate = db.getSMSRecordById(recordId1);
-        recordToUpdate.forwarded = true;
-        recordToUpdate.status = "forwarded";
-        recordToUpdate.forwardedAt = String(millis());
+        recordToUpdate.content = "已更新的短信内容";
         
         if (db.updateSMSRecord(recordToUpdate)) {
             Serial.println("✓ 记录更新成功");
             SMSRecord updatedRecord = db.getSMSRecordById(recordId1);
-            Serial.println("  转发状态: " + String(updatedRecord.forwarded ? "是" : "否"));
-            Serial.println("  转发时间: " + updatedRecord.forwardedAt);
+            Serial.println("  更新后内容: " + updatedRecord.content);
         }
     }
     
@@ -301,12 +288,9 @@ void demonstratePerformance() {
     std::vector<int> testRecordIds;
     for (int i = 0; i < testCount; i++) {
         SMSRecord record;
-        record.fromNumber = "+861380000" + String(100 + i);
-        record.toNumber = "+8613800000000";
+        record.fromNumber = "+86138" + String(10000000 + i);
         record.content = "性能测试短信 #" + String(i) + " - " + String(millis());
-        record.ruleId = 0;
-        record.forwarded = false;
-        record.status = "received";
+        record.receivedAt = time(nullptr);
         
         int recordId = db.addSMSRecord(record);
         if (recordId > 0) {

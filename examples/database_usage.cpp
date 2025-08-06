@@ -84,10 +84,11 @@ void databaseUsageExample() {
     
     // 添加转发规则
     ForwardRule rule1;
-    rule1.name = "测试规则1";
+    rule1.ruleName = "测试规则1";
     rule1.sourceNumber = "+86138*";
-    rule1.targetNumber = "+8613800000000";
-    rule1.keyword = "紧急";
+    rule1.pushType = "webhook";
+    rule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
+    rule1.keywords = "紧急";
     rule1.enabled = true;
     
     int ruleId1 = dbManager.addForwardRule(rule1);
@@ -99,10 +100,11 @@ void databaseUsageExample() {
     
     // 添加第二个规则
     ForwardRule rule2;
-    rule2.name = "测试规则2";
+    rule2.ruleName = "测试规则2";
     rule2.sourceNumber = "+86139*";
-    rule2.targetNumber = "+8613900000000";
-    rule2.keyword = "通知";
+    rule2.pushType = "wechat";
+    rule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
+    rule2.keywords = "通知";
     rule2.enabled = false;
     
     int ruleId2 = dbManager.addForwardRule(rule2);
@@ -116,9 +118,9 @@ void databaseUsageExample() {
     std::vector<ForwardRule> rules = dbManager.getAllForwardRules();
     Serial.println("\n当前转发规则数量: " + String(rules.size()));
     for (const auto& rule : rules) {
-        Serial.println("规则ID: " + String(rule.id) + ", 名称: " + rule.name + 
-                      ", 源号码: " + rule.sourceNumber + ", 目标号码: " + rule.targetNumber + 
-                      ", 关键词: " + rule.keyword + ", 启用: " + String(rule.enabled ? "是" : "否"));
+        Serial.println("规则ID: " + String(rule.id) + ", 名称: " + rule.ruleName + 
+                       ", 源号码: " + rule.sourceNumber + ", 推送类型: " + rule.pushType + 
+                       ", 关键词: " + rule.keywords + ", 启用: " + String(rule.enabled ? "是" : "否"));
     }
     
     // 更新规则

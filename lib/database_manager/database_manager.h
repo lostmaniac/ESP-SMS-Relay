@@ -50,12 +50,13 @@ struct APConfig {
 struct ForwardRule {
     int id;                ///< 规则ID
     String name;           ///< 规则名称
-    String sourceNumber;   ///< 源号码（支持通配符）
-    String targetNumber;   ///< 目标号码
+    String sourceNumber;   ///< 发送号码，可以为空，支持通配符
     String keyword;        ///< 关键词过滤
-    bool enabled;          ///< 是否启用
+    String pushType;       ///< 推送类型：例如企业微信群机器人，钉钉群机器人，webhook
+    String pushConfig;     ///< 推送配置为json格式，支持配置模板
+    bool enabled;          ///< 是否使用
     String createdAt;      ///< 创建时间
-    String updatedAt;      ///< 更新时间
+    String updatedAt;      ///< 修改时间
 };
 
 /**
@@ -64,14 +65,9 @@ struct ForwardRule {
  */
 struct SMSRecord {
     int id;                ///< 记录ID
-    String fromNumber;     ///< 发送方号码
-    String toNumber;       ///< 接收方号码
-    String content;        ///< 短信内容
-    String receivedAt;     ///< 接收时间
-    String forwardedAt;    ///< 转发时间
-    int ruleId;            ///< 应用的规则ID
-    bool forwarded;        ///< 是否已转发
-    String status;         ///< 状态（received, forwarded, failed）
+    String fromNumber;     ///< 发送方号码，支持索引
+    String content;        ///< 短信内容，支持索引
+    time_t receivedAt;     ///< 接收时间，time保存，支持索引，方便以后按照时间过滤短信
 };
 
 /**

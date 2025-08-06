@@ -222,7 +222,7 @@ DatabaseInfo DatabaseManager::getDatabaseInfo() {
         }
         
         queryResults.clear();
-        if (executeQuery("SELECT (SELECT COUNT(*) FROM forward_rules) + (SELECT COUNT(*) FROM sms_records) as total", queryCallback, nullptr)) {
+        if (executeQuery("SELECT (SELECT COUNT(*) FROM forward_rules) + (SELECT COUNT(*) FROM sms_records) + (SELECT COUNT(*) FROM ap_config) as total", queryCallback, nullptr)) {
             if (!queryResults.empty()) {
                 dbInfo.recordCount = queryResults[0]["total"].toInt();
             }
@@ -303,9 +303,9 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
     }
     
     String timestamp = getCurrentTimestamp();
-    String sql = "INSERT INTO forward_rules (name, source_number, target_number, keyword, enabled, created_at, updated_at) VALUES ('" +
-                 rule.name + "', '" + rule.sourceNumber + "', '" + rule.targetNumber + "', '" + 
-                 rule.keyword + "', " + String(rule.enabled ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
+    String sql = "INSERT INTO forward_rules (name, source_number, keyword, push_type, push_config, enabled, created_at, updated_at) VALUES ('" +
+                 rule.name + "', '" + rule.sourceNumber + "', '" + rule.keyword + "', '" + 
+                 rule.pushType + "', '" + rule.pushConfig + "', " + String(rule.enabled ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -326,8 +326,8 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
     }
     
     String sql = "UPDATE forward_rules SET name='" + rule.name + "', source_number='" + rule.sourceNumber + 
-                 "', target_number='" + rule.targetNumber + "', keyword='" + rule.keyword + 
-                 "', enabled=" + String(rule.enabled ? 1 : 0) + 
+                 "', keyword='" + rule.keyword + "', push_type='" + rule.pushType + 
+                 "', push_config='" + rule.pushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
                  ", updated_at='" + getCurrentTimestamp() + "' WHERE id=" + String(rule.id);
     
     return executeSQL(sql);
@@ -367,8 +367,9 @@ std::vector<ForwardRule> DatabaseManager::getAllForwardRules() {
             rule.id = row.at("id").toInt();
             rule.name = row.at("name");
             rule.sourceNumber = row.at("source_number");
-            rule.targetNumber = row.at("target_number");
             rule.keyword = row.at("keyword");
+            rule.pushType = row.at("push_type");
+            rule.pushConfig = row.at("push_config");
             rule.enabled = row.at("enabled").toInt() == 1;
             rule.createdAt = row.at("created_at");
             rule.updatedAt = row.at("updated_at");
@@ -400,8 +401,9 @@ ForwardRule DatabaseManager::getForwardRuleById(int ruleId) {
             rule.id = row["id"].toInt();
             rule.name = row["name"];
             rule.sourceNumber = row["source_number"];
-            rule.targetNumber = row["target_number"];
             rule.keyword = row["keyword"];
+            rule.pushType = row["push_type"];
+            rule.pushConfig = row["push_config"];
             rule.enabled = row["enabled"].toInt() == 1;
             rule.createdAt = row["created_at"];
             rule.updatedAt = row["updated_at"];
@@ -422,14 +424,10 @@ int DatabaseManager::addSMSRecord(const SMSRecord& record) {
         return -1;
     }
     
-    String timestamp = getCurrentTimestamp();
-    String receivedAt = record.receivedAt.isEmpty() ? timestamp : record.receivedAt;
-    String forwardedAt = record.forwardedAt.isEmpty() ? "" : record.forwardedAt;
+    time_t receivedTime = record.receivedAt != 0 ? record.receivedAt : time(nullptr);
     
-    String sql = "INSERT INTO sms_records (from_number, to_number, content, received_at, forwarded_at, rule_id, forwarded, status) VALUES ('" +
-                 record.fromNumber + "', '" + record.toNumber + "', '" + record.content + "', '" + 
-                 receivedAt + "', '" + forwardedAt + "', " + String(record.ruleId) + ", " + 
-                 String(record.forwarded ? 1 : 0) + ", '" + record.status + "')";
+    String sql = "INSERT INTO sms_records (from_number, content, received_at) VALUES ('" +
+                 record.fromNumber + "', '" + record.content + "', " + String(receivedTime) + ")";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -449,10 +447,8 @@ bool DatabaseManager::updateSMSRecord(const SMSRecord& record) {
         return false;
     }
     
-    String sql = "UPDATE sms_records SET from_number='" + record.fromNumber + "', to_number='" + record.toNumber + 
-                 "', content='" + record.content + "', forwarded_at='" + record.forwardedAt + 
-                 "', rule_id=" + String(record.ruleId) + ", forwarded=" + String(record.forwarded ? 1 : 0) + 
-                 ", status='" + record.status + "' WHERE id=" + String(record.id);
+    String sql = "UPDATE sms_records SET from_number='" + record.fromNumber + "', content='" + record.content + 
+                 "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
     
     return executeSQL(sql);
 }
@@ -477,13 +473,8 @@ std::vector<SMSRecord> DatabaseManager::getSMSRecords(int limit, int offset) {
             SMSRecord record;
             record.id = row.at("id").toInt();
             record.fromNumber = row.at("from_number");
-            record.toNumber = row.at("to_number");
             record.content = row.at("content");
-            record.receivedAt = row.at("received_at");
-            record.forwardedAt = row.at("forwarded_at");
-            record.ruleId = row.at("rule_id").toInt();
-            record.forwarded = row.at("forwarded").toInt() == 1;
-            record.status = row.at("status");
+            record.receivedAt = row.at("received_at").toInt();
             records.push_back(record);
         }
     }
@@ -511,13 +502,8 @@ SMSRecord DatabaseManager::getSMSRecordById(int recordId) {
             auto& row = queryResults[0];
             record.id = row["id"].toInt();
             record.fromNumber = row["from_number"];
-            record.toNumber = row["to_number"];
             record.content = row["content"];
-            record.receivedAt = row["received_at"];
-            record.forwardedAt = row["forwarded_at"];
-            record.ruleId = row["rule_id"].toInt();
-            record.forwarded = row["forwarded"].toInt() == 1;
-            record.status = row["status"];
+            record.receivedAt = row["received_at"].toInt();
         }
     }
     
@@ -535,7 +521,8 @@ int DatabaseManager::deleteOldSMSRecords(int daysOld) {
         return 0;
     }
     
-    String sql = "DELETE FROM sms_records WHERE datetime(received_at) < datetime('now', '-" + String(daysOld) + " days')";
+    time_t cutoffTime = time(nullptr) - (daysOld * 24 * 60 * 60); // 计算截止时间戳
+    String sql = "DELETE FROM sms_records WHERE received_at < " + String(cutoffTime);
     if (executeSQL(sql)) {
         return sqlite3_changes(db);
     }
@@ -582,9 +569,10 @@ bool DatabaseManager::createTables() {
         "CREATE TABLE IF NOT EXISTS forward_rules ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "name TEXT NOT NULL,"
-        "source_number TEXT NOT NULL,"
-        "target_number TEXT NOT NULL,"
+        "source_number TEXT DEFAULT '',"
         "keyword TEXT DEFAULT '',"
+        "push_type TEXT NOT NULL,"
+        "push_config TEXT NOT NULL,"
         "enabled INTEGER DEFAULT 1,"
         "created_at TEXT NOT NULL,"
         "updated_at TEXT NOT NULL"
@@ -600,13 +588,8 @@ bool DatabaseManager::createTables() {
         "CREATE TABLE IF NOT EXISTS sms_records ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "from_number TEXT NOT NULL,"
-        "to_number TEXT NOT NULL,"
         "content TEXT NOT NULL,"
-        "received_at TEXT NOT NULL,"
-        "forwarded_at TEXT DEFAULT '',"
-        "rule_id INTEGER DEFAULT 0,"
-        "forwarded INTEGER DEFAULT 0,"
-        "status TEXT DEFAULT 'received'"
+        "received_at INTEGER NOT NULL"
         ")";
     
     if (!executeSQL(createSMSRecordsTable)) {
@@ -616,8 +599,9 @@ bool DatabaseManager::createTables() {
     
     // 创建索引
     executeSQL("CREATE INDEX IF NOT EXISTS idx_forward_rules_enabled ON forward_rules(enabled)");
+    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_from_number ON sms_records(from_number)");
+    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_content ON sms_records(content)");
     executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_received_at ON sms_records(received_at)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_status ON sms_records(status)");
     
     debugPrint("数据库表创建完成");
     return true;

@@ -190,13 +190,8 @@ int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, 
     // 创建短信记录
     SMSRecord record;
     record.fromNumber = sender;
-    record.toNumber = ""; // 接收方号码（本机号码，可以从配置中获取）
     record.content = content;
-    record.receivedAt = formatTimestamp(timestamp);
-    record.forwardedAt = "";
-    record.ruleId = 0; // 暂时设为0，后续可以根据转发规则设置
-    record.forwarded = false;
-    record.status = "received";
+    record.receivedAt = time(nullptr); // 使用当前时间戳
     
     // 添加到数据库
     int recordId = dbManager.addSMSRecord(record);
