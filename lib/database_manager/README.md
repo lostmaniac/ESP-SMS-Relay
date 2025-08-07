@@ -126,6 +126,7 @@ rule.pushType = "webhook";
 rule.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
 rule.keywords = "紧急";
 rule.enabled = true;
+rule.isDefaultForward = false;  // 是否默认转发（忽略关键词匹配）
 
 int ruleId = dbManager.addForwardRule(rule);
 if (ruleId > 0) {

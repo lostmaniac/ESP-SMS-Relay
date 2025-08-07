@@ -71,6 +71,8 @@ void demonstrateForwardRules() {
     for (const auto& rule : existingRules) {
         Serial.println("  规则 #" + String(rule.id) + ": " + rule.ruleName + 
                       " (" + rule.sourceNumber + " -> " + rule.pushType + ")");
+        Serial.println("    启用状态: " + String(rule.enabled ? "是" : "否"));
+        Serial.println("    默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
     }
     
     // 添加演示规则
@@ -83,6 +85,7 @@ void demonstrateForwardRules() {
     demoRule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
     demoRule1.keywords = "紧急";
     demoRule1.enabled = true;
+    demoRule1.isDefaultForward = false;
     
     int ruleId1 = db.addForwardRule(demoRule1);
     if (ruleId1 > 0) {
@@ -98,6 +101,7 @@ void demonstrateForwardRules() {
     demoRule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
     demoRule2.keywords = "会议";
     demoRule2.enabled = false;
+    demoRule2.isDefaultForward = true;
     
     int ruleId2 = db.addForwardRule(demoRule2);
     if (ruleId2 > 0) {
@@ -114,13 +118,13 @@ void demonstrateForwardRules() {
     if (ruleId1 > 0) {
         Serial.println("\n修改规则演示...");
         ForwardRule ruleToUpdate = db.getForwardRuleById(ruleId1);
-        ruleToUpdate.keyword = "紧急|急救";
+        ruleToUpdate.keywords = "紧急|急救";
         ruleToUpdate.enabled = false;
         
         if (db.updateForwardRule(ruleToUpdate)) {
             Serial.println("✓ 规则更新成功");
             ForwardRule updatedRule = db.getForwardRuleById(ruleId1);
-            Serial.println("  新关键词: " + updatedRule.keyword);
+            Serial.println("  新关键词: " + updatedRule.keywords);
             Serial.println("  启用状态: " + String(updatedRule.enabled ? "是" : "否"));
         }
     }
@@ -152,7 +156,12 @@ void demonstrateSMSRecords() {
     
     SMSRecord demoRecord1;
     demoRecord1.fromNumber = "+8613812345678";
+    demoRecord1.toNumber = "+8613800000000";
     demoRecord1.content = "这是一条包含紧急关键词的测试短信";
+    demoRecord1.ruleId = 0;
+    demoRecord1.forwarded = false;
+    demoRecord1.status = "received";
+    demoRecord1.forwardedAt = "";
     demoRecord1.receivedAt = time(nullptr);
     
     int recordId1 = db.addSMSRecord(demoRecord1);
@@ -162,7 +171,12 @@ void demonstrateSMSRecords() {
     
     SMSRecord demoRecord2;
     demoRecord2.fromNumber = "+8613987654321";
+    demoRecord2.toNumber = "+8613800000000";
     demoRecord2.content = "这是一条关于会议通知的短信";
+    demoRecord2.ruleId = 0;
+    demoRecord2.forwarded = false;
+    demoRecord2.status = "received";
+    demoRecord2.forwardedAt = "";
     demoRecord2.receivedAt = time(nullptr);
     
     int recordId2 = db.addSMSRecord(demoRecord2);
@@ -172,7 +186,12 @@ void demonstrateSMSRecords() {
     
     SMSRecord demoRecord3;
     demoRecord3.fromNumber = "+8613711111111";
+    demoRecord3.toNumber = "+8613800000000";
     demoRecord3.content = "普通短信，无需转发";
+    demoRecord3.ruleId = 0;
+    demoRecord3.forwarded = false;
+    demoRecord3.status = "received";
+    demoRecord3.forwardedAt = "";
     demoRecord3.receivedAt = time(nullptr);
     
     int recordId3 = db.addSMSRecord(demoRecord3);
@@ -289,7 +308,12 @@ void demonstratePerformance() {
     for (int i = 0; i < testCount; i++) {
         SMSRecord record;
         record.fromNumber = "+86138" + String(10000000 + i);
+        record.toNumber = "+8613800000000";
         record.content = "性能测试短信 #" + String(i) + " - " + String(millis());
+        record.ruleId = 0;
+        record.forwarded = false;
+        record.status = "received";
+        record.forwardedAt = "";
         record.receivedAt = time(nullptr);
         
         int recordId = db.addSMSRecord(record);

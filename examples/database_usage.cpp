@@ -90,6 +90,7 @@ void databaseUsageExample() {
     rule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
     rule1.keywords = "紧急";
     rule1.enabled = true;
+    rule1.isDefaultForward = false;
     
     int ruleId1 = dbManager.addForwardRule(rule1);
     if (ruleId1 > 0) {
@@ -106,6 +107,7 @@ void databaseUsageExample() {
     rule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
     rule2.keywords = "通知";
     rule2.enabled = false;
+    rule2.isDefaultForward = true;
     
     int ruleId2 = dbManager.addForwardRule(rule2);
     if (ruleId2 > 0) {
@@ -120,13 +122,14 @@ void databaseUsageExample() {
     for (const auto& rule : rules) {
         Serial.println("规则ID: " + String(rule.id) + ", 名称: " + rule.ruleName + 
                        ", 源号码: " + rule.sourceNumber + ", 推送类型: " + rule.pushType + 
-                       ", 关键词: " + rule.keywords + ", 启用: " + String(rule.enabled ? "是" : "否"));
+                       ", 关键词: " + rule.keywords + ", 启用: " + String(rule.enabled ? "是" : "否") +
+                       ", 默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
     }
     
     // 更新规则
     if (ruleId1 > 0) {
         ForwardRule updateRule = dbManager.getForwardRuleById(ruleId1);
-        updateRule.keyword = "更新后的关键词";
+        updateRule.keywords = "更新后的关键词";
         updateRule.enabled = false;
         
         if (dbManager.updateForwardRule(updateRule)) {

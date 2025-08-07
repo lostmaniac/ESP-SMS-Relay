@@ -50,6 +50,7 @@ DatabaseManager::DatabaseManager()
     : db(nullptr), status(DB_NOT_INITIALIZED), debugMode(false) {
     dbInfo.isOpen = false;
     dbInfo.version = "1.0";
+    dbInfo.lastModified = "";
 }
 
 /**
@@ -210,6 +211,16 @@ DatabaseInfo DatabaseManager::getDatabaseInfo() {
         File dbFile = LittleFS.open(littleFSPath, "r");
         if (dbFile) {
             dbInfo.dbSize = dbFile.size();
+            // 获取文件最后修改时间
+            time_t lastWrite = dbFile.getLastWrite();
+            if (lastWrite > 0) {
+                struct tm* timeinfo = localtime(&lastWrite);
+                char timeStr[64];
+                strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+                dbInfo.lastModified = String(timeStr);
+            } else {
+                dbInfo.lastModified = "未知";
+            }
             dbFile.close();
         }
         
@@ -303,9 +314,9 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
     }
     
     String timestamp = getCurrentTimestamp();
-    String sql = "INSERT INTO forward_rules (name, source_number, keyword, push_type, push_config, enabled, created_at, updated_at) VALUES ('" +
-                 rule.name + "', '" + rule.sourceNumber + "', '" + rule.keyword + "', '" + 
-                 rule.pushType + "', '" + rule.pushConfig + "', " + String(rule.enabled ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
+    String sql = "INSERT INTO forward_rules (rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at) VALUES ('" +
+                  rule.ruleName + "', '" + rule.sourceNumber + "', '" + rule.keywords + "', '" + 
+                  rule.pushType + "', '" + rule.pushConfig + "', " + String(rule.enabled ? 1 : 0) + ", " + String(rule.isDefaultForward ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -325,10 +336,11 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
         return false;
     }
     
-    String sql = "UPDATE forward_rules SET name='" + rule.name + "', source_number='" + rule.sourceNumber + 
-                 "', keyword='" + rule.keyword + "', push_type='" + rule.pushType + 
-                 "', push_config='" + rule.pushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
-                 ", updated_at='" + getCurrentTimestamp() + "' WHERE id=" + String(rule.id);
+    String sql = "UPDATE forward_rules SET rule_name='" + rule.ruleName + "', source_number='" + rule.sourceNumber + 
+                  "', keywords='" + rule.keywords + "', push_type='" + rule.pushType + 
+                  "', push_config='" + rule.pushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
+                  ", is_default_forward=" + String(rule.isDefaultForward ? 1 : 0) + 
+                  ", updated_at='" + getCurrentTimestamp() + "' WHERE id=" + String(rule.id);
     
     return executeSQL(sql);
 }
@@ -361,16 +373,17 @@ std::vector<ForwardRule> DatabaseManager::getAllForwardRules() {
     }
     
     queryResults.clear();
-    if (executeQuery("SELECT * FROM forward_rules ORDER BY id", queryCallback, nullptr)) {
+    if (executeQuery("SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules ORDER BY id", queryCallback, nullptr)) {
         for (const auto& row : queryResults) {
             ForwardRule rule;
             rule.id = row.at("id").toInt();
-            rule.name = row.at("name");
+            rule.ruleName = row.at("rule_name");
             rule.sourceNumber = row.at("source_number");
-            rule.keyword = row.at("keyword");
+            rule.keywords = row.at("keywords");
             rule.pushType = row.at("push_type");
             rule.pushConfig = row.at("push_config");
             rule.enabled = row.at("enabled").toInt() == 1;
+            rule.isDefaultForward = row.at("is_default_forward").toInt() == 1;
             rule.createdAt = row.at("created_at");
             rule.updatedAt = row.at("updated_at");
             rules.push_back(rule);
@@ -394,17 +407,18 @@ ForwardRule DatabaseManager::getForwardRuleById(int ruleId) {
     }
     
     queryResults.clear();
-    String sql = "SELECT * FROM forward_rules WHERE id=" + String(ruleId);
+    String sql = "SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules WHERE id=" + String(ruleId);
     if (executeQuery(sql, queryCallback, nullptr)) {
         if (!queryResults.empty()) {
             auto& row = queryResults[0];
             rule.id = row["id"].toInt();
-            rule.name = row["name"];
+            rule.ruleName = row["rule_name"];
             rule.sourceNumber = row["source_number"];
-            rule.keyword = row["keyword"];
+            rule.keywords = row["keywords"];
             rule.pushType = row["push_type"];
             rule.pushConfig = row["push_config"];
             rule.enabled = row["enabled"].toInt() == 1;
+            rule.isDefaultForward = row["is_default_forward"].toInt() == 1;
             rule.createdAt = row["created_at"];
             rule.updatedAt = row["updated_at"];
         }
@@ -426,8 +440,10 @@ int DatabaseManager::addSMSRecord(const SMSRecord& record) {
     
     time_t receivedTime = record.receivedAt != 0 ? record.receivedAt : time(nullptr);
     
-    String sql = "INSERT INTO sms_records (from_number, content, received_at) VALUES ('" +
-                 record.fromNumber + "', '" + record.content + "', " + String(receivedTime) + ")";
+    String sql = "INSERT INTO sms_records (from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at) VALUES ('" +
+                 record.fromNumber + "', '" + record.toNumber + "', '" + record.content + "', " + 
+                 String(record.ruleId) + ", " + String(record.forwarded ? 1 : 0) + ", '" + record.status + "', '" + 
+                 record.forwardedAt + "', " + String(receivedTime) + ")";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -447,8 +463,10 @@ bool DatabaseManager::updateSMSRecord(const SMSRecord& record) {
         return false;
     }
     
-    String sql = "UPDATE sms_records SET from_number='" + record.fromNumber + "', content='" + record.content + 
-                 "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
+    String sql = "UPDATE sms_records SET from_number='" + record.fromNumber + "', to_number='" + record.toNumber + 
+                 "', content='" + record.content + "', rule_id=" + String(record.ruleId) + 
+                 ", forwarded=" + String(record.forwarded ? 1 : 0) + ", status='" + record.status + 
+                 "', forwarded_at='" + record.forwardedAt + "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
     
     return executeSQL(sql);
 }
@@ -473,7 +491,12 @@ std::vector<SMSRecord> DatabaseManager::getSMSRecords(int limit, int offset) {
             SMSRecord record;
             record.id = row.at("id").toInt();
             record.fromNumber = row.at("from_number");
+            record.toNumber = row.at("to_number");
             record.content = row.at("content");
+            record.ruleId = row.at("rule_id").toInt();
+            record.forwarded = row.at("forwarded").toInt() == 1;
+            record.status = row.at("status");
+            record.forwardedAt = row.at("forwarded_at");
             record.receivedAt = row.at("received_at").toInt();
             records.push_back(record);
         }
@@ -502,7 +525,12 @@ SMSRecord DatabaseManager::getSMSRecordById(int recordId) {
             auto& row = queryResults[0];
             record.id = row["id"].toInt();
             record.fromNumber = row["from_number"];
+            record.toNumber = row["to_number"];
             record.content = row["content"];
+            record.ruleId = row["rule_id"].toInt();
+            record.forwarded = row["forwarded"].toInt() == 1;
+            record.status = row["status"];
+            record.forwardedAt = row["forwarded_at"];
             record.receivedAt = row["received_at"].toInt();
         }
     }
@@ -568,14 +596,15 @@ bool DatabaseManager::createTables() {
     String createForwardRulesTable = 
         "CREATE TABLE IF NOT EXISTS forward_rules ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "name TEXT NOT NULL,"
-        "source_number TEXT DEFAULT '',"
-        "keyword TEXT DEFAULT '',"
-        "push_type TEXT NOT NULL,"
-        "push_config TEXT NOT NULL,"
+        "rule_name TEXT NOT NULL,"
+        "source_number TEXT DEFAULT '*',"
+        "keywords TEXT DEFAULT '',"
+        "push_type TEXT NOT NULL DEFAULT 'webhook',"
+        "push_config TEXT NOT NULL DEFAULT '{}',"
         "enabled INTEGER DEFAULT 1,"
-        "created_at TEXT NOT NULL,"
-        "updated_at TEXT NOT NULL"
+        "is_default_forward INTEGER DEFAULT 0,"
+        "created_at TEXT DEFAULT CURRENT_TIMESTAMP,"
+        "updated_at TEXT DEFAULT CURRENT_TIMESTAMP"
         ")";
     
     if (!executeSQL(createForwardRulesTable)) {
@@ -588,7 +617,12 @@ bool DatabaseManager::createTables() {
         "CREATE TABLE IF NOT EXISTS sms_records ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "from_number TEXT NOT NULL,"
+        "to_number TEXT DEFAULT '',"
         "content TEXT NOT NULL,"
+        "rule_id INTEGER DEFAULT 0,"
+        "forwarded INTEGER DEFAULT 0,"
+        "status TEXT DEFAULT 'received',"
+        "forwarded_at TEXT DEFAULT '',"
         "received_at INTEGER NOT NULL"
         ")";
     

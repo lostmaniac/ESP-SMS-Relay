@@ -174,6 +174,7 @@ void testForwardRuleManagement() {
     rule1.pushConfig = "{\"url\":\"http://example.com/webhook\"}";
     rule1.keywords = "紧急";
     rule1.enabled = true;
+    rule1.isDefaultForward = false;
     
     int ruleId1 = db.addForwardRule(rule1);
     ASSERT_TRUE(ruleId1 > 0, "添加转发规则应返回有效ID");
@@ -186,6 +187,7 @@ void testForwardRuleManagement() {
     rule2.pushConfig = "{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
     rule2.keywords = "通知";
     rule2.enabled = false;
+    rule2.isDefaultForward = true;
     
     int ruleId2 = db.addForwardRule(rule2);
     ASSERT_TRUE(ruleId2 > 0, "添加第二个转发规则应返回有效ID");
@@ -203,20 +205,33 @@ void testForwardRuleManagement() {
     ASSERT_EQUAL("webhook", retrievedRule1.pushType, "推送类型应匹配");
     ASSERT_EQUAL("紧急", retrievedRule1.keywords, "关键词应匹配");
     ASSERT_TRUE(retrievedRule1.enabled, "启用状态应匹配");
+    ASSERT_FALSE(retrievedRule1.isDefaultForward, "默认转发状态应匹配");
+    
+    // 验证第二个规则
+    ForwardRule retrievedRule2 = db.getForwardRuleById(ruleId2);
+    ASSERT_EQUAL(ruleId2, retrievedRule2.id, "获取的规则ID应匹配");
+    ASSERT_EQUAL("测试规则2", retrievedRule2.ruleName, "规则名称应匹配");
+    ASSERT_EQUAL("+86139*", retrievedRule2.sourceNumber, "源号码应匹配");
+    ASSERT_EQUAL("wechat", retrievedRule2.pushType, "推送类型应匹配");
+    ASSERT_EQUAL("通知", retrievedRule2.keywords, "关键词应匹配");
+    ASSERT_FALSE(retrievedRule2.enabled, "启用状态应匹配");
+    ASSERT_TRUE(retrievedRule2.isDefaultForward, "默认转发状态应匹配");
     
     // 测试更新规则
-    retrievedRule1.name = "更新后的规则1";
-    retrievedRule1.keyword = "更新关键词";
+    retrievedRule1.ruleName = "更新后的规则1";
+    retrievedRule1.keywords = "紧急|重要";
     retrievedRule1.enabled = false;
+    retrievedRule1.isDefaultForward = true;
     
     bool updateResult = db.updateForwardRule(retrievedRule1);
     ASSERT_TRUE(updateResult, "更新转发规则应该成功");
     
     // 验证更新结果
     ForwardRule updatedRule = db.getForwardRuleById(ruleId1);
-    ASSERT_EQUAL("更新后的规则1", updatedRule.name, "规则名称应已更新");
-    ASSERT_EQUAL("更新关键词", updatedRule.keyword, "关键词应已更新");
+    ASSERT_EQUAL("更新后的规则1", updatedRule.ruleName, "规则名称应已更新");
+    ASSERT_EQUAL("紧急|重要", updatedRule.keywords, "关键词应已更新");
     ASSERT_FALSE(updatedRule.enabled, "启用状态应已更新");
+    ASSERT_TRUE(updatedRule.isDefaultForward, "默认转发状态应已更新");
     
     // 测试删除规则
     bool deleteResult1 = db.deleteForwardRule(ruleId1);
