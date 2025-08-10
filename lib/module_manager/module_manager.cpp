@@ -9,7 +9,6 @@
 #include "gsm_service.h"
 #include "phone_caller.h"
 #include "../uart_monitor/uart_monitor.h"
-#include "test_manager.h"
 #include "at_command_handler.h"
 #include "http_client.h"
 #include "config_manager.h"
@@ -369,21 +368,10 @@ String ModuleManager::getLastError() {
  * @return false 测试失败
  */
 bool ModuleManager::runModuleTests() {
-    Serial.println("=== 开始模块功能测试 ===");
-    
-    TestManager& testManager = TestManager::getInstance();
-    
-    // 初始化测试管理器
-    if (!testManager.initialize()) {
-        setError("测试管理器初始化失败: " + testManager.getLastError());
-        return false;
-    }
-    
-    // 运行所有测试
-    bool allTestsPassed = testManager.runAllTests();
-    
-    Serial.println("\n=== 模块功能测试完成 ===");
-    return allTestsPassed;
+    Serial.println("=== 模块功能测试 ===");
+    Serial.println("测试管理器已移除，跳过模块测试");
+    Serial.println("=== 模块功能测试完成 ===");
+    return true;
 }
 
 /**

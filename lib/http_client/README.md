@@ -21,8 +21,6 @@ HTTP客户端模块是ESP-SMS-Relay项目的核心组件之一，提供了基于
 lib/http_client/
 ├── http_client.h              # HTTP客户端类定义
 ├── http_client.cpp            # HTTP客户端实现
-├── http_client_example.h      # 使用示例类定义
-├── http_client_example.cpp    # 使用示例实现
 └── README.md                  # 本文档
 ```
 
@@ -479,17 +477,12 @@ void enableDebugMode() {
 
 ## 测试文件
 
-📁 **可用的测试和示例文件**
-- `examples/http_client_usage.cpp` - 基础使用示例
-- `examples/test_http_integration.cpp` - 集成测试示例
+📁 **可用的测试文件**
 - `test/test_http_client.cpp` - 单元测试
-- `lib/http_client/http_client_example.cpp` - 详细示例
 
 ## 示例代码
 
-完整的使用示例请参考：
-- `examples/http_client_usage.cpp` - 基本使用示例
-- `lib/http_client/http_client_example.cpp` - 详细功能示例
+完整的使用示例请参考上述API参考部分的代码示例。
 
 ## 注意事项
 

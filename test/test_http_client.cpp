@@ -10,7 +10,6 @@
 #include <Arduino.h>
 #include "module_manager.h"
 #include "http_client.h"
-#include "http_client_example.h"
 
 /**
  * @brief HTTP客户端基础功能测试
