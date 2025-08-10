@@ -102,7 +102,7 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
     // 从完整路径中提取LittleFS相对路径
     String checkPath = fullDbPath.substring(9); // 去掉 "/littlefs/" 前缀
     debugPrint("[DEBUG] 检查文件存在性 - 完整路径: " + fullDbPath + ", LittleFS路径: " + checkPath);
-    bool dbExists = LittleFS.exists(checkPath);
+    bool dbExists = fsManager.fileExists(checkPath);
     debugPrint("数据库文件存在: " + String(dbExists ? "是" : "否"));
     
     if (!dbExists && !createIfNotExists) {
@@ -208,7 +208,9 @@ DatabaseInfo DatabaseManager::getDatabaseInfo() {
         // 更新数据库文件大小
         // 从完整路径中提取LittleFS相对路径
         String littleFSPath = dbPath.substring(9); // 去掉 "/littlefs/" 前缀
-        File dbFile = LittleFS.open(littleFSPath, "r");
+        FilesystemManager& fsManager = FilesystemManager::getInstance();
+        fs::FS& fs = fsManager.getFS();
+        File dbFile = fs.open(littleFSPath, "r");
         if (dbFile) {
             dbInfo.dbSize = dbFile.size();
             // 获取文件最后修改时间

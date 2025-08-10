@@ -84,7 +84,7 @@ ModuleManager& ModuleManager::getInstance() {
  * @return false 初始化失败
  */
 bool ModuleManager::initializeAllModules() {
-    Serial.println("=== 开始模块管理器初始化 ===");
+    // 开始模块管理器初始化
     
     // 首先初始化配置管理器
     ConfigManager& configManager = ConfigManager::getInstance();
@@ -128,7 +128,7 @@ bool ModuleManager::initializeAllModules() {
     }
     
     initialized = true;
-    Serial.println("=== 模块管理器初始化完成 ===");
+    // 模块管理器初始化完成
     return true;
 }
 
@@ -189,7 +189,7 @@ bool ModuleManager::initializeModule(ModuleType moduleType) {
  * @return false 初始化失败
  */
 bool ModuleManager::initAtCommandModule() {
-    Serial.println("正在初始化AT命令处理模块...");
+    // 初始化AT命令处理模块
     
     // 创建AT命令处理器实例
     if (!g_at_command_handler) {
@@ -206,7 +206,6 @@ bool ModuleManager::initAtCommandModule() {
         return false;
     }
     
-    Serial.println("AT命令处理模块初始化完成。");
     return true;
 }
 
@@ -216,7 +215,7 @@ bool ModuleManager::initAtCommandModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initGsmBasicModule() {
-    Serial.println("正在初始化GSM基础模块...");
+    // 初始化GSM基础模块
     
     GsmService& gsmService = GsmService::getInstance();
     
@@ -225,7 +224,6 @@ bool ModuleManager::initGsmBasicModule() {
         return false;
     }
     
-    Serial.println("GSM基础模块初始化完成。");
     return true;
 }
 
@@ -235,7 +233,7 @@ bool ModuleManager::initGsmBasicModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initHttpClientModule() {
-    Serial.println("正在初始化HTTP客户端模块...");
+    // 初始化HTTP客户端模块
     
     // 检查依赖模块是否已初始化
     if (!g_at_command_handler) {
@@ -258,7 +256,6 @@ bool ModuleManager::initHttpClientModule() {
         return false;
     }
     
-    Serial.println("HTTP客户端模块初始化完成。");
     return true;
 }
 
@@ -268,13 +265,11 @@ bool ModuleManager::initHttpClientModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initSmsSenderModule() {
-    Serial.println("正在初始化短信发送模块...");
+    // 初始化短信发送模块
     
     // 暂时跳过SmsSender初始化以避免头文件冲突
     // TODO: 重构SmsSender以避免与SmsHandler的pdulib冲突
-    Serial.println("短信发送模块初始化暂时跳过（避免头文件冲突）");
     
-    Serial.println("短信发送模块初始化完成。");
     return true;
 }
 
@@ -284,7 +279,7 @@ bool ModuleManager::initSmsSenderModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initPhoneCallerModule() {
-    Serial.println("正在初始化电话拨打模块...");
+    // 初始化电话拨打模块
     
     // 创建电话拨打器实例
     if (!g_phone_caller) {
@@ -295,7 +290,6 @@ bool ModuleManager::initPhoneCallerModule() {
         }
     }
     
-    Serial.println("电话拨打模块初始化完成。");
     return true;
 }
 
@@ -305,13 +299,11 @@ bool ModuleManager::initPhoneCallerModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initSmsHandlerModule() {
-    Serial.println("正在初始化短信处理模块...");
+    // 初始化短信处理模块
     
     // 暂时跳过SmsHandler初始化以避免头文件冲突
     // TODO: 重构SmsHandler以避免与SmsSender的pdulib冲突
-    Serial.println("短信处理模块初始化暂时跳过（避免头文件冲突）");
     
-    Serial.println("短信处理模块初始化完成。");
     return true;
 }
 
@@ -321,10 +313,9 @@ bool ModuleManager::initSmsHandlerModule() {
  * @return false 初始化失败
  */
 bool ModuleManager::initUartMonitorModule() {
-    Serial.println("正在初始化串口监听模块...");
+    // 初始化串口监听模块
     
     // 串口监听模块不需要特殊初始化
-    Serial.println("串口监听模块初始化完成。");
     return true;
 }
 
@@ -368,9 +359,7 @@ String ModuleManager::getLastError() {
  * @return false 测试失败
  */
 bool ModuleManager::runModuleTests() {
-    Serial.println("=== 模块功能测试 ===");
-    Serial.println("测试管理器已移除，跳过模块测试");
-    Serial.println("=== 模块功能测试完成 ===");
+    // 模块功能测试已移除
     return true;
 }
 
@@ -380,7 +369,7 @@ bool ModuleManager::runModuleTests() {
  * @return false 启动失败
  */
 bool ModuleManager::startBackgroundTasks() {
-    Serial.println("正在启动后台任务...");
+    // 启动后台任务
     
     // 启动串口监听任务
     if (initializeModule(MODULE_UART_MONITOR)) {
@@ -392,7 +381,6 @@ bool ModuleManager::startBackgroundTasks() {
             1,                   // Priority
             NULL                 // Task handle
         );
-        Serial.println("串口监听任务已启动。");
         return true;
     } else {
         setError("启动串口监听任务失败");
@@ -417,7 +405,6 @@ void ModuleManager::setModuleStatus(ModuleType moduleType, ModuleStatus status) 
  */
 void ModuleManager::setError(const String& error) {
     lastError = error;
-    Serial.printf("模块管理器错误: %s\n", error.c_str());
 }
 
 // 全局访问函数

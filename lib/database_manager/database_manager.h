@@ -16,7 +16,6 @@
 
 #include <Arduino.h>
 #include <sqlite3.h>
-#include <LittleFS.h>
 #include <vector>
 #include <map>
 

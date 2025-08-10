@@ -32,8 +32,7 @@ void setup() {
     
     // 等待串口稳定
     delay(1000);
-    Serial.println("\n=== ESP32 SMS Relay System ===");
-    Serial.println("硬件初始化完成，启动系统...");
+    // ESP32 SMS Relay System 启动
     
     // 创建系统初始化任务
     xTaskCreate(
@@ -58,7 +57,7 @@ void loop() {
     
     // 如果系统出错，尝试重启
     if (status == SYSTEM_ERROR) {
-        Serial.println("检测到系统错误，尝试重启...");
+        // 检测到系统错误，尝试重启
         systemInit.restart();
     }
     

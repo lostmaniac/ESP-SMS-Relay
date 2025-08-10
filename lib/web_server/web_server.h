@@ -15,12 +15,10 @@
 #define WEB_SERVER_H
 
 #include <Arduino.h>
-#include <WiFi.h>
 #include <WebServer.h>
-#include <FS.h>
-#include <LittleFS.h>
 #include "../database_manager/database_manager.h"
 #include "../wifi_manager/wifi_manager.h"
+#include "../filesystem_manager/filesystem_manager.h"
 
 /**
  * @enum WebServerStatus

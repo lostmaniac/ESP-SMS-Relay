@@ -56,14 +56,12 @@ bool SystemInit::initialize(bool runTests) {
     // 首先初始化配置管理器
     ConfigManager& configManager = ConfigManager::getInstance();
     if (!configManager.initialize()) {
-        Serial.println("配置管理器初始化失败");
         return false;
     }
     
     // 然后初始化日志管理器
     LogManager& logManager = LogManager::getInstance();
     if (!logManager.initialize()) {
-        Serial.println("日志管理器初始化失败");
         return false;
     }
     
@@ -93,7 +91,8 @@ bool SystemInit::initialize(bool runTests) {
     
     // 打印/littlefs目录下的所有文件
     LOG_INFO(LOG_MODULE_SYSTEM, "正在扫描/littlefs目录下的文件...");
-    File root = LittleFS.open("/");
+    fs::FS& fs = filesystemManager.getFS();
+    File root = fs.open("/");
     if (!root) {
         LOG_INFO(LOG_MODULE_SYSTEM, "无法打开/littlefs根目录");
     } else if (!root.isDirectory()) {
@@ -326,8 +325,6 @@ String SystemInit::getLastError() {
  * @return false 重启失败
  */
 bool SystemInit::restart() {
-    Serial.println("正在重启系统...");
-    
     // 重置状态
     initialized = false;
     setSystemStatus(SYSTEM_NOT_INITIALIZED);
@@ -361,7 +358,7 @@ void SystemInit::setSystemStatus(SystemStatus status) {
         default: statusName = "未知"; break;
     }
     
-    Serial.printf("系统状态: %s\n", statusName.c_str());
+    // 系统状态检查
 }
 
 /**

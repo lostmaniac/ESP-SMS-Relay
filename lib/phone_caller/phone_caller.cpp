@@ -53,8 +53,7 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
     // 构造拨打电话的AT命令
     String call_command = "ATD" + phone_number + ";";
     
-    Serial.println("[PhoneCaller] 拨打电话: " + phone_number);
-    Serial.println("[PhoneCaller] 发送命令: " + call_command);
+    // 拨打电话
     
     // 清空串口缓冲区
     while (simSerial.available()) {
@@ -73,7 +72,7 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
-            Serial.print(c); // 实时打印响应
+            // 读取响应
             
             // 检查拨打成功的响应
             if (response.indexOf("OK") != -1) {
@@ -86,7 +85,6 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
                 response.indexOf("BUSY") != -1 ||
                 response.indexOf("NO ANSWER") != -1 ||
                 response.indexOf("NO CARRIER") != -1) {
-                Serial.println("\n[PhoneCaller] 拨打失败: " + response);
                 last_error_ = "Call failed: " + response;
                 return CALL_ERROR_AT_COMMAND_FAILED;
             }
@@ -95,10 +93,8 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
     }
     
     if (call_initiated) {
-        Serial.println("\n[PhoneCaller] 电话拨打命令发送成功");
         return CALL_SUCCESS;
     } else {
-        Serial.println("\n[PhoneCaller] 拨打电话超时");
         last_error_ = "Call timeout";
         return CALL_ERROR_AT_COMMAND_FAILED;
     }
@@ -111,32 +107,21 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
  * @return PhoneCallResult 拨打结果
  */
 PhoneCallResult PhoneCaller::makeCallAndWait(const String& phone_number, int wait_seconds) {
-    Serial.println("[PhoneCaller] 开始拨打电话并等待测试...");
-    
     // 拨打电话
     PhoneCallResult result = makeCall(phone_number);
     if (result != CALL_SUCCESS) {
-        Serial.println("[PhoneCaller] 拨打电话失败，错误码: " + String(result));
         return result;
     }
     
-    Serial.println("[PhoneCaller] 电话拨打成功，开始等待 7 秒...");
-    
-    // 等待7秒，每秒显示倒计时
-    for (int i = 7; i > 0; i--) {
-        Serial.println("[PhoneCaller] 倒计时: " + String(i) + " 秒");
+    // 等待指定时间
+    for (int i = wait_seconds; i > 0; i--) {
         delay(1000);
     }
     
-    Serial.println("[PhoneCaller] 等待时间结束，准备挂断电话");
-    
     // 挂断电话
     if (!hangupCall()) {
-        Serial.println("[PhoneCaller] 挂断电话失败: " + last_error_);
         return CALL_ERROR_HANGUP_FAILED;
     }
-    
-    Serial.println("[PhoneCaller] 电话拨打测试完成");
     return CALL_SUCCESS;
 }
 
@@ -146,7 +131,7 @@ PhoneCallResult PhoneCaller::makeCallAndWait(const String& phone_number, int wai
  * @return false 挂断失败
  */
 bool PhoneCaller::hangupCall() {
-    Serial.println("[PhoneCaller] 开始挂断电话...");
+    // 挂断电话
     
     // 清空串口缓冲区
     while (simSerial.available()) {
@@ -180,14 +165,11 @@ bool PhoneCaller::hangupCall() {
     if (response.indexOf("OK") != -1 ||
         response.indexOf("NO CARRIER") != -1 ||
         response.indexOf("VOICE CALL: END") != -1) {
-        Serial.println("\n[PhoneCaller] 电话挂断成功");
         return true;
     } else if (response.indexOf("ERROR") != -1) {
-        Serial.println("[PhoneCaller] 挂断命令失败");
         last_error_ = "挂断失败";
         return false;
     } else {
-        Serial.println("[PhoneCaller] 挂断命令超时");
         last_error_ = "挂断超时";
         return false;
     }
@@ -199,7 +181,7 @@ bool PhoneCaller::hangupCall() {
  * @return false 有通话进行中
  */
 bool PhoneCaller::checkCallStatus() {
-    Serial.println("[PhoneCaller] 检查通话状态...");
+    // 检查通话状态
     
     // 清空串口缓冲区
     while (simSerial.available()) {
@@ -220,18 +202,14 @@ bool PhoneCaller::checkCallStatus() {
             if (response.indexOf("OK") != -1) {
                 // 如果响应中包含+CLCC:，说明有通话进行中
                 if (response.indexOf("+CLCC:") != -1) {
-                    Serial.println("[PhoneCaller] 检测到通话仍在进行中");
                     return false;
                 } else {
-                    Serial.println("[PhoneCaller] 确认无通话进行中");
                     return true;
                 }
             }
         }
         delay(10);
     }
-    
-    Serial.println("[PhoneCaller] 通话状态检查超时，假设已挂断");
     return true;
 }
 
@@ -270,14 +248,12 @@ bool PhoneCaller::isNetworkReady() {
     // 解析CREG响应
     int cregIndex = response.indexOf("+CREG:");
     if (cregIndex == -1) {
-        Serial.println("[PhoneCaller] 未找到CREG响应");
         return false;
     }
     
     // 查找状态值（第二个逗号后的数字）
     int firstCommaIndex = response.indexOf(',', cregIndex);
     if (firstCommaIndex == -1) {
-        Serial.println("[PhoneCaller] CREG响应格式错误：未找到第一个逗号");
         return false;
     }
     
@@ -304,8 +280,6 @@ bool PhoneCaller::isNetworkReady() {
     String statusStr = response.substring(statusStart, statusEnd);
     statusStr.trim();
     int status = statusStr.toInt();
-    
-    Serial.printf("[PhoneCaller] 网络注册状态: %d\n", status);
     
     // 状态1表示本地网络注册，状态5表示漫游网络注册
     return (status == 1 || status == 5);
@@ -335,7 +309,6 @@ bool PhoneCaller::sendAtCommand(const String& command, const String& expected_re
     
     // 发送AT命令
     simSerial.println(command);
-    Serial.println("[PhoneCaller] 发送命令: " + command);
     
     unsigned long start_time = millis();
     String response = "";
@@ -348,20 +321,16 @@ bool PhoneCaller::sendAtCommand(const String& command, const String& expected_re
             
             // 检查是否收到期望的响应
             if (response.indexOf(expected_response) != -1) {
-                Serial.println("[PhoneCaller] 收到响应: " + response.substring(response.length() - 50));
                 return true;
             }
             
             // 检查是否收到错误响应
             if (response.indexOf("ERROR") != -1) {
-                Serial.println("[PhoneCaller] 命令执行失败: " + response);
                 return false;
             }
         }
         delay(10);
     }
-    
-    Serial.println("[PhoneCaller] 命令超时: " + command);
     return false;
 }
 

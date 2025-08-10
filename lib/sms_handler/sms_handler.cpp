@@ -46,14 +46,7 @@ void SmsHandler::processMessageBlock(const String& block) {
         String content = pdu.getText();
         String timestamp = pdu.getTimeStamp();
         
-        Serial.println("收到单条短信:");
-        Serial.print("  发件人: ");
-        Serial.println(sender);
-        Serial.print("  接收时间: ");
-        Serial.println(formatTimestamp(timestamp));
-        Serial.print("  消息内容: ");
-        Serial.println(content);
-        Serial.println("----------");
+        // 短信接收日志已简化
         
         // 处理完整短信（存储到数据库并转发）
     processSmsComplete(sender, content, timestamp);
@@ -61,7 +54,7 @@ void SmsHandler::processMessageBlock(const String& block) {
 }
 
 void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
-    Serial.printf("正在拼接消息, 引用号: %d...\n", refNum);
+    // 拼接长短信
     String fullMessage = "";
     String sender = "";
     String timestamp = "";
@@ -77,19 +70,10 @@ void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
                 sender = pduPart.getSender();
                 timestamp = pduPart.getTimeStamp();
             }
-        } else {
-            Serial.printf("解码分片 %d 失败，跳过此分片。\n", i);
         }
     }
 
-    Serial.println("收到完整长短信:");
-    Serial.print("  发件人: ");
-    Serial.println(sender);
-    Serial.print("  接收时间: ");
-    Serial.println(formatTimestamp(timestamp));
-    Serial.print("  消息内容: ");
-    Serial.println(fullMessage);
-    Serial.println("----------");
+    // 长短信拼接完成日志已简化
     
     // 处理完整短信（存储到数据库并转发）
     processSmsComplete(sender, fullMessage, timestamp);
@@ -102,8 +86,7 @@ void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
 }
 
 void SmsHandler::readMessage(int messageIndex) {
-    Serial.print("正在读取短信，索引: ");
-    Serial.println(messageIndex);
+    // 读取短信索引: messageIndex
     simSerial.print("AT+CMGR=" + String(messageIndex) + "\r\n");
 }
 
@@ -150,28 +133,16 @@ String SmsHandler::formatTimestamp(const String& pduTimestamp) {
  * @param timestamp 接收时间戳
  */
 void SmsHandler::processSmsComplete(const String& sender, const String& content, const String& timestamp) {
-    Serial.println("开始处理完整短信...");
+    // 处理完整短信
     
     // 存储到数据库
     int recordId = storeSmsToDatabase(sender, content, timestamp);
     if (recordId > 0) {
-        Serial.printf("短信已存储到数据库，记录ID: %d\n", recordId);
-        
-        // 转发短信
-        if (forwardSms(sender, content, timestamp, recordId)) {
-            Serial.println("短信转发成功");
-        } else {
-            Serial.println("警告: 短信转发失败");
-        }
+        // 短信已存储到数据库
+        forwardSms(sender, content, timestamp, recordId);
     } else {
-        Serial.println("警告: 短信存储到数据库失败");
-        
-        // 即使存储失败，也尝试转发（使用-1作为记录ID）
-        if (forwardSms(sender, content, timestamp, -1)) {
-            Serial.println("短信转发成功（未存储到数据库）");
-        } else {
-            Serial.println("警告: 短信转发失败");
-        }
+        // 存储失败，仍尝试转发
+        forwardSms(sender, content, timestamp, -1);
     }
 }
 
@@ -187,7 +158,6 @@ int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, 
     
     // 检查数据库是否就绪
     if (!dbManager.isReady()) {
-        Serial.println("数据库未就绪，无法存储短信");
         return -1;
     }
     
@@ -198,14 +168,7 @@ int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, 
     record.receivedAt = time(nullptr); // 使用当前时间戳
     
     // 添加到数据库
-    int recordId = dbManager.addSMSRecord(record);
-    if (recordId > 0) {
-        Serial.printf("短信记录已添加到数据库，ID: %d\n", recordId);
-    } else {
-        Serial.println("添加短信记录到数据库失败: " + dbManager.getLastError());
-    }
-    
-    return recordId;
+    return dbManager.addSMSRecord(record);
 }
 
 /**
@@ -222,7 +185,6 @@ bool SmsHandler::forwardSms(const String& sender, const String& content, const S
     
     // 检查推送管理器是否已初始化
     if (!pushManager.initialize()) {
-        Serial.println("推送管理器初始化失败: " + pushManager.getLastError());
         return false;
     }
     
@@ -233,9 +195,7 @@ bool SmsHandler::forwardSms(const String& sender, const String& content, const S
     context.timestamp = timestamp;
     context.smsRecordId = smsRecordId;
     
-    Serial.println("正在处理短信转发...");
-    Serial.println("发送方: " + sender);
-    Serial.println("内容: " + content.substring(0, 50) + (content.length() > 50 ? "..." : ""));
+    // 处理短信转发
     
     // 处理短信转发
     PushResult result = pushManager.processSmsForward(context);

@@ -67,7 +67,6 @@ bool SmsSender::initialize(const String& sca_number) {
     
     initialized_ = true;
     last_error_ = "";
-    Serial.println("短信发送器初始化成功");
     return true;
 }
 
@@ -105,7 +104,7 @@ SmsSendResult SmsSender::sendSms(const String& recipient, const String& message)
         return SMS_ERROR_NETWORK_NOT_READY;
     }
     
-    Serial.printf("开始发送短信到 %s: %s\n", recipient.c_str(), message.c_str());
+    // 开始发送短信
     
     // 进行PDU编码
     int tpdu_length = pdu_encoder_->encodePDU(recipient.c_str(), message.c_str());
@@ -135,7 +134,6 @@ SmsSendResult SmsSender::sendSms(const String& recipient, const String& message)
                 last_error_ = "PDU编码失败，未知错误";
                 break;
         }
-        Serial.printf("PDU编码失败: %s\n", last_error_.c_str());
         return SMS_ERROR_ENCODE_FAILED;
     }
     
@@ -146,19 +144,7 @@ SmsSendResult SmsSender::sendSms(const String& recipient, const String& message)
         return SMS_ERROR_ENCODE_FAILED;
     }
     
-    Serial.printf("PDU编码成功，TPDU长度: %d字节\n", tpdu_length);
-    Serial.printf("PDU数据: %s\n", pdu_data);
-    
-    // 分析PDU数据结构
-    String pdu_str = String(pdu_data);
-    if (pdu_str.length() > 20) {
-        Serial.printf("PDU数据分析:\n");
-        Serial.printf("  SCA长度: %s\n", pdu_str.substring(0, 2).c_str());
-        Serial.printf("  SCA类型: %s\n", pdu_str.substring(2, 4).c_str());
-        Serial.printf("  SCA号码: %s\n", pdu_str.substring(4, 18).c_str());
-        Serial.printf("  PDU类型: %s\n", pdu_str.substring(18, 20).c_str());
-        Serial.printf("  消息引用: %s\n", pdu_str.substring(20, 22).c_str());
-    }
+    // PDU编码成功
     
     // 发送PDU数据
     if (!sendPduData(pdu_data, tpdu_length)) {
@@ -166,7 +152,6 @@ SmsSendResult SmsSender::sendSms(const String& recipient, const String& message)
     }
     
     last_error_ = "";
-    Serial.println("短信发送成功");
     return SMS_SUCCESS;
 }
 
@@ -205,27 +190,20 @@ SmsSendResult SmsSender::sendTextSms(const String& recipient, const String& mess
         return SMS_ERROR_NETWORK_NOT_READY;
     }
     
-    Serial.printf("开始发送文本模式短信到 %s: %s\n", recipient.c_str(), message.c_str());
-    
     // 切换到文本模式
-    Serial.println("切换到文本模式...");
     if (!sendAtCommand("AT+CMGF=1", "OK", 5000)) {
         last_error_ = "切换到文本模式失败";
         return SMS_ERROR_SEND_TIMEOUT;
     }
     
-    // 等待5秒
-    Serial.println("等待5秒...");
     vTaskDelay(5000);
     
     // 发送文本模式短信
     bool text_send_success = sendTextData(recipient, message);
     
     // 切换回PDU模式
-    Serial.println("切换回PDU模式...");
     if (!sendAtCommand("AT+CMGF=0", "OK", 5000)) {
-        Serial.println("警告: 切换回PDU模式失败");
-        // 不返回错误，因为短信可能已经发送成功
+        // 切换回PDU模式失败，但短信可能已发送成功
     }
     
     if (!text_send_success) {
@@ -233,7 +211,6 @@ SmsSendResult SmsSender::sendTextSms(const String& recipient, const String& mess
     }
     
     last_error_ = "";
-    Serial.println("文本模式短信发送完成");
     return SMS_SUCCESS;
 }
 
@@ -280,14 +257,12 @@ bool SmsSender::isNetworkReady() {
     // 解析CREG响应
     int cregIndex = response.indexOf("+CREG:");
     if (cregIndex == -1) {
-        Serial.println("未找到CREG响应");
         return false;
     }
     
     // 查找状态值（第二个逗号后的数字）
     int firstCommaIndex = response.indexOf(',', cregIndex);
     if (firstCommaIndex == -1) {
-        Serial.println("CREG响应格式错误：未找到第一个逗号");
         return false;
     }
     
@@ -314,8 +289,6 @@ bool SmsSender::isNetworkReady() {
     String statusStr = response.substring(statusStart, statusEnd);
     statusStr.trim();
     int status = statusStr.toInt();
-    
-    Serial.printf("网络注册状态: %d\n", status);
     
     // 状态1表示本地网络注册，状态5表示漫游网络注册
     return (status == 1 || status == 5);
@@ -351,7 +324,6 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
     // 发送命令
     if (command.length() > 0) {
         simSerial.println(command);
-        Serial.printf("发送AT命令: %s\n", command.c_str());
     }
     
     unsigned long start_time = millis();
@@ -363,7 +335,6 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
             if (simSerial.available()) {
                 char c = simSerial.read();
                 if (c == '>') {
-                    Serial.println("收到'>'提示符");
                     return true;
                 }
             }
@@ -378,7 +349,6 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
             }
             
             if (expected_response.length() == 0 || response.indexOf(expected_response) != -1) {
-                Serial.printf("AT命令成功，响应: %s\n", response.c_str());
                 return true;
             }
             
@@ -386,7 +356,6 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
         }
     }
     
-    Serial.printf("AT命令失败，超时或响应不匹配。收到: %s\n", response.c_str());
     last_error_ = "AT命令执行失败: " + command;
     return false;
 }
@@ -408,14 +377,9 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
         return false;
     }
     
-    Serial.println("开始发送PDU数据...");
-    Serial.printf("PDU数据: %s\n", pdu_data);
-    
     // pdulib的getSMS()方法返回的PDU数据已经包含了Ctrl+Z结束符
     // 直接发送完整的PDU数据
     simSerial.print(pdu_data);
-    
-    Serial.println("已发送完整PDU数据（包含Ctrl+Z结束符）");
     
     // 等待发送结果
     unsigned long start_time = millis();
@@ -429,13 +393,11 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
         
         // 检查成功响应
         if (response.indexOf("+CMGS:") != -1 && response.indexOf("OK") != -1) {
-            Serial.printf("PDU发送成功，响应: %s\n", response.c_str());
             return true;
         }
         
         // 检查错误响应
         if (response.indexOf("ERROR") != -1) {
-            Serial.printf("PDU发送失败，响应: %s\n", response.c_str());
             last_error_ = "PDU发送失败: " + response;
             return false;
         }
@@ -443,7 +405,6 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
         vTaskDelay(10);
     }
     
-    Serial.printf("PDU发送超时，部分响应: %s\n", response.c_str());
     last_error_ = "PDU发送超时";
     return false;
 }
@@ -509,13 +470,9 @@ bool SmsSender::sendTextData(const String& recipient, const String& message) {
         return false;
     }
     
-    Serial.println("开始发送文本模式数据...");
-    
     // 发送短信内容
     simSerial.print(message);
     simSerial.write(0x1A); // Ctrl+Z结束符
-    
-    Serial.printf("发送文本内容: %s\n", message.c_str());
     
     // 等待发送结果
     unsigned long start_time = millis();
@@ -541,14 +498,10 @@ bool SmsSender::sendTextData(const String& recipient, const String& message) {
         vTaskDelay(10);
     }
     
-    Serial.printf("文本模式发送响应: %s\n", response.c_str());
-    
     if (send_success) {
-        Serial.println("文本模式短信发送成功");
         return true;
     } else {
         last_error_ = "文本模式发送超时或失败: " + response;
-        Serial.printf("文本模式发送失败: %s\n", last_error_.c_str());
         return false;
     }
 }
