@@ -1,12 +1,15 @@
 #include "sms_handler.h"
 #include "Arduino.h"
+#include "log_manager.h"
 
 // 引用外部声明的串口对象
 extern HardwareSerial simSerial;
 
 void SmsHandler::processLine(const String& line) {
+    LogManager& logger = LogManager::getInstance();
+    
     if (line.startsWith("+CMTI:")) {
-        Serial.println("收到新短信通知，准备读取...");
+        logger.logInfo(LOG_MODULE_SMS, "收到新短信通知，准备读取...");
         int commaIndex = line.lastIndexOf(',');
         if (commaIndex != -1) {
             String indexStr = line.substring(commaIndex + 1);
@@ -14,12 +17,20 @@ void SmsHandler::processLine(const String& line) {
             readMessage(indexStr.toInt());
         }
     }
+    // 处理+CMT格式的直接短信通知（当前配置使用的格式）
+    else if (line.startsWith("+CMT:")) {
+        logger.logInfo(LOG_MODULE_SMS, "📱 收到新短信通知 (+CMT格式)");
+        // +CMT格式的短信通知，PDU数据在下一行
+        // 这里不需要特殊处理，uart_dispatcher会处理PDU数据
+    }
 }
 
 void SmsHandler::processMessageBlock(const String& block) {
+    LogManager& logger = LogManager::getInstance();
+    
     PDU pdu;
     if (!pdu.decodePDU(block.c_str())) {
-        Serial.println("PDU解码失败。");
+        logger.logError(LOG_MODULE_SMS, "PDU解码失败");
         return;
     }
 
@@ -30,7 +41,7 @@ void SmsHandler::processMessageBlock(const String& block) {
         unsigned char partNum = concatInfo[1];
         unsigned char totalParts = concatInfo[2];
 
-        Serial.printf("收到长短信分片，消息引用: %d，分片序号: %d/%d\n", refNum, partNum, totalParts);
+        logger.logInfo(LOG_MODULE_SMS, "收到长短信分片，消息引用: " + String(refNum) + "，分片序号: " + String(partNum) + "/" + String(totalParts));
 
         // 存储完整的PDU，而不仅仅是文本部分，以便后续正确拼接
         smsCache[refNum].totalParts = totalParts;
@@ -46,10 +57,15 @@ void SmsHandler::processMessageBlock(const String& block) {
         String content = pdu.getText();
         String timestamp = pdu.getTimeStamp();
         
-        // 短信接收日志已简化
+        // 输出短信接收日志
+        logger.printSeparator("收到新短信");
+        logger.logInfo(LOG_MODULE_SMS, "📞 发送方: " + sender);
+        logger.logInfo(LOG_MODULE_SMS, "📝 内容: " + content);
+        logger.logInfo(LOG_MODULE_SMS, "🕐 时间: " + timestamp);
+        logger.printSeparator();
         
         // 处理完整短信（存储到数据库并转发）
-    processSmsComplete(sender, content, timestamp);
+        processSmsComplete(sender, content, timestamp);
     }
 }
 
@@ -73,7 +89,13 @@ void SmsHandler::assembleAndProcessSms(uint8_t refNum) {
         }
     }
 
-    // 长短信拼接完成日志已简化
+    // 输出长短信拼接完成日志
+    LogManager& logger = LogManager::getInstance();
+    logger.printSeparator("长短信拼接完成");
+    logger.logInfo(LOG_MODULE_SMS, "📞 发送方: " + sender);
+    logger.logInfo(LOG_MODULE_SMS, "📝 完整内容: " + fullMessage);
+    logger.logInfo(LOG_MODULE_SMS, "🕐 时间: " + timestamp);
+    logger.printSeparator();
     
     // 处理完整短信（存储到数据库并转发）
     processSmsComplete(sender, fullMessage, timestamp);
@@ -133,15 +155,16 @@ String SmsHandler::formatTimestamp(const String& pduTimestamp) {
  * @param timestamp 接收时间戳
  */
 void SmsHandler::processSmsComplete(const String& sender, const String& content, const String& timestamp) {
-    // 处理完整短信
+    LogManager& logger = LogManager::getInstance();
+    logger.logInfo(LOG_MODULE_SMS, "🔄 开始处理短信...");
     
     // 存储到数据库
     int recordId = storeSmsToDatabase(sender, content, timestamp);
     if (recordId > 0) {
-        // 短信已存储到数据库
+        logger.logInfo(LOG_MODULE_SMS, "💾 短信已存储到数据库，记录ID: " + String(recordId));
         forwardSms(sender, content, timestamp, recordId);
     } else {
-        // 存储失败，仍尝试转发
+        logger.logError(LOG_MODULE_SMS, "❌ 短信存储到数据库失败，仍尝试转发");
         forwardSms(sender, content, timestamp, -1);
     }
 }
@@ -201,30 +224,31 @@ bool SmsHandler::forwardSms(const String& sender, const String& content, const S
     PushResult result = pushManager.processSmsForward(context);
     
     // 处理结果
+    LogManager& logger = LogManager::getInstance();
     switch (result) {
         case PUSH_SUCCESS:
-            Serial.println("✅ 短信转发成功");
+            logger.logInfo(LOG_MODULE_SMS, "✅ 短信转发成功");
             return true;
             
         case PUSH_NO_RULE:
-            Serial.println("ℹ️ 没有匹配的转发规则，跳过转发");
+            logger.logInfo(LOG_MODULE_SMS, "ℹ️ 没有匹配的转发规则，跳过转发");
             return true; // 没有规则不算失败
             
         case PUSH_RULE_DISABLED:
-            Serial.println("ℹ️ 转发规则已禁用，跳过转发");
+            logger.logInfo(LOG_MODULE_SMS, "ℹ️ 转发规则已禁用，跳过转发");
             return true; // 规则禁用不算失败
             
         case PUSH_CONFIG_ERROR:
-            Serial.println("❌ 转发配置错误: " + pushManager.getLastError());
+            logger.logError(LOG_MODULE_SMS, "❌ 转发配置错误: " + pushManager.getLastError());
             return false;
             
         case PUSH_NETWORK_ERROR:
-            Serial.println("❌ 网络错误: " + pushManager.getLastError());
+            logger.logError(LOG_MODULE_SMS, "❌ 网络错误: " + pushManager.getLastError());
             return false;
             
         case PUSH_FAILED:
         default:
-            Serial.println("❌ 短信转发失败: " + pushManager.getLastError());
+            logger.logError(LOG_MODULE_SMS, "❌ 短信转发失败: " + pushManager.getLastError());
             return false;
     }
 }

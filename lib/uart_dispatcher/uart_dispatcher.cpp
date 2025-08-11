@@ -4,8 +4,10 @@
 SmsHandler smsHandler;
 
 void UartDispatcher::process(const String& data) {
-    // 原始输出
-    Serial.print(data);
+    // 只在未抑制输出时才打印原始数据
+    if (!suppressOutput) {
+        Serial.print(data);
+    }
 
     String trimmedData = data;
     trimmedData.trim();
@@ -28,4 +30,12 @@ void UartDispatcher::process(const String& data) {
         smsHandler.processLine(trimmedData);
     }
     // 其他消息当前仅打印，不作进一步处理。
+}
+
+void UartDispatcher::setSuppressOutput(bool suppress) {
+    suppressOutput = suppress;
+}
+
+bool UartDispatcher::isOutputSuppressed() const {
+    return suppressOutput;
 }

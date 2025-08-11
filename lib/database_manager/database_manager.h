@@ -40,6 +40,8 @@ struct APConfig {
     bool enabled;          ///< 是否启用AP模式
     int channel;           ///< WiFi信道
     int maxConnections;    ///< 最大连接数
+    String createdAt;      ///< 创建时间
+    String updatedAt;      ///< 修改时间
 };
 
 /**
@@ -310,6 +312,13 @@ private:
      * @return String 时间戳字符串
      */
     String getCurrentTimestamp();
+
+    /**
+     * @brief 转义SQL字符串，防止SQL注入
+     * @param str 待转义的字符串
+     * @return String 转义后的字符串
+     */
+    String escapeString(const String& str);
 
 private:
     sqlite3* db;                    ///< SQLite数据库连接

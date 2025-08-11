@@ -277,6 +277,8 @@ APConfig DatabaseManager::getAPConfig() {
             config.enabled = row["enabled"].toInt() == 1;
             config.channel = row["channel"].toInt();
             config.maxConnections = row["max_connections"].toInt();
+            config.createdAt = row["created_at"];
+            config.updatedAt = row["updated_at"];
         }
     }
     
@@ -316,9 +318,17 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
     }
     
     String timestamp = getCurrentTimestamp();
+    
+    // 对字符串字段进行SQL转义处理
+    String escapedRuleName = escapeString(rule.ruleName);
+    String escapedSourceNumber = escapeString(rule.sourceNumber);
+    String escapedKeywords = escapeString(rule.keywords);
+    String escapedPushType = escapeString(rule.pushType);
+    String escapedPushConfig = escapeString(rule.pushConfig);
+    
     String sql = "INSERT INTO forward_rules (rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at) VALUES ('" +
-                  rule.ruleName + "', '" + rule.sourceNumber + "', '" + rule.keywords + "', '" + 
-                  rule.pushType + "', '" + rule.pushConfig + "', " + String(rule.enabled ? 1 : 0) + ", " + String(rule.isDefaultForward ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
+                  escapedRuleName + "', '" + escapedSourceNumber + "', '" + escapedKeywords + "', '" + 
+                  escapedPushType + "', '" + escapedPushConfig + "', " + String(rule.enabled ? 1 : 0) + ", " + String(rule.isDefaultForward ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -338,9 +348,16 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
         return false;
     }
     
-    String sql = "UPDATE forward_rules SET rule_name='" + rule.ruleName + "', source_number='" + rule.sourceNumber + 
-                  "', keywords='" + rule.keywords + "', push_type='" + rule.pushType + 
-                  "', push_config='" + rule.pushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
+    // 对字符串字段进行SQL转义处理
+    String escapedRuleName = escapeString(rule.ruleName);
+    String escapedSourceNumber = escapeString(rule.sourceNumber);
+    String escapedKeywords = escapeString(rule.keywords);
+    String escapedPushType = escapeString(rule.pushType);
+    String escapedPushConfig = escapeString(rule.pushConfig);
+    
+    String sql = "UPDATE forward_rules SET rule_name='" + escapedRuleName + "', source_number='" + escapedSourceNumber + 
+                  "', keywords='" + escapedKeywords + "', push_type='" + escapedPushType + 
+                  "', push_config='" + escapedPushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
                   ", is_default_forward=" + String(rule.isDefaultForward ? 1 : 0) + 
                   ", updated_at='" + getCurrentTimestamp() + "' WHERE id=" + String(rule.id);
     
@@ -760,4 +777,44 @@ String DatabaseManager::getCurrentTimestamp() {
     // 在实际应用中，可以使用RTC或NTP时间
     unsigned long currentTime = millis();
     return String(currentTime);
+}
+
+/**
+ * @brief 转义字符串中的特殊字符，防止SQL注入
+ * @param str 需要转义的字符串
+ * @return 转义后的字符串
+ */
+String DatabaseManager::escapeString(const String& str) {
+    String escaped = "";
+    for (int i = 0; i < str.length(); i++) {
+        char c = str.charAt(i);
+        switch (c) {
+            case '\'':
+                // 单引号转义为两个单引号（SQLite标准）
+                escaped += "\'\'";
+                break;
+            case '\\':
+                // 反斜杠转义
+                escaped += "\\\\";
+                break;
+            case '\n':
+                // 换行符转义
+                escaped += "\\n";
+                break;
+            case '\r':
+                // 回车符转义
+                escaped += "\\r";
+                break;
+            case '\t':
+                // 制表符转义
+                escaped += "\\t";
+                break;
+            default:
+                // 其他字符直接添加，不对双引号进行转义
+                // 因为JSON字符串中的双引号已经在命令解析阶段正确处理
+                escaped += c;
+                break;
+        }
+    }
+    return escaped;
 }

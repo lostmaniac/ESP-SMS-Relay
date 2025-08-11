@@ -31,13 +31,13 @@
 ```sql
 CREATE TABLE ap_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ssid TEXT NOT NULL,                -- WiFi热点名称
-    password TEXT NOT NULL,            -- WiFi热点密码
-    enabled INTEGER DEFAULT 1,         -- 是否启用AP模式
-    channel INTEGER DEFAULT 1,         -- WiFi信道
-    max_connections INTEGER DEFAULT 4, -- 最大连接数
-    created_at TEXT NOT NULL,          -- 创建时间
-    updated_at TEXT NOT NULL           -- 更新时间
+    ssid TEXT NOT NULL,                     -- WiFi热点名称
+    password TEXT NOT NULL,                 -- WiFi热点密码
+    enabled INTEGER DEFAULT 1,              -- 是否启用AP模式
+    channel INTEGER DEFAULT 1,              -- WiFi信道
+    max_connections INTEGER DEFAULT 4,      -- 最大连接数
+    created_at TEXT NOT NULL,               -- 创建时间
+    updated_at TEXT NOT NULL                -- 修改时间
 );
 ```
 
@@ -47,10 +47,11 @@ CREATE TABLE forward_rules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     rule_name TEXT NOT NULL,                    -- 规则名称
     source_number TEXT DEFAULT '*',             -- 发送号码，可以为空，支持通配符
-    keywords TEXT,                              -- 关键词过滤
+    keywords TEXT DEFAULT '',                   -- 关键词过滤
     push_type TEXT NOT NULL DEFAULT 'webhook', -- 推送类型：企业微信群机器人，钉钉群机器人，webhook等
     push_config TEXT NOT NULL DEFAULT '{}',    -- 推送配置为json格式，支持配置模板和变量
     enabled INTEGER DEFAULT 1,                 -- 是否使用
+    is_default_forward INTEGER DEFAULT 0,      -- 是否默认转发（忽略关键词匹配）
     created_at TEXT DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP  -- 修改时间
 );
@@ -60,9 +61,14 @@ CREATE TABLE forward_rules (
 ```sql
 CREATE TABLE sms_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    from_number TEXT NOT NULL,     -- 发送方号码，支持索引
-    content TEXT NOT NULL,         -- 短信内容，支持索引
-    received_at INTEGER NOT NULL   -- 接收时间，time保存，支持索引，方便以后按照时间过滤短信
+    from_number TEXT NOT NULL,      -- 发送方号码，支持索引
+    to_number TEXT DEFAULT '',      -- 接收方号码
+    content TEXT NOT NULL,          -- 短信内容，支持索引
+    rule_id INTEGER DEFAULT 0,      -- 匹配的转发规则ID
+    forwarded INTEGER DEFAULT 0,    -- 是否已转发
+    status TEXT DEFAULT 'received', -- 状态：received, forwarded, failed等
+    forwarded_at TEXT DEFAULT '',   -- 转发时间
+    received_at INTEGER NOT NULL    -- 接收时间，time保存，支持索引，方便以后按照时间过滤短信
 );
 ```
 

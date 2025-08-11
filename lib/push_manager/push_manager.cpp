@@ -454,7 +454,7 @@ PushResult PushManager::pushToWebhook(const String& config, const PushContext& c
         bodyTemplate = "{\"sender\":\"{sender}\",\"content\":\"{content}\",\"timestamp\":\"{timestamp}\"}";
     }
     
-    String messageBody = applyTemplate(bodyTemplate, context);
+    String messageBody = applyTemplate(bodyTemplate, context, true); // Webhook需要JSON转义
     
     // 设置请求头
     std::map<String, String> headers;
@@ -551,9 +551,10 @@ std::map<String, String> PushManager::parseConfig(const String& configJson) {
  * @brief 应用消息模板
  * @param templateStr 模板字符串
  * @param context 推送上下文
+ * @param escapeForJson 是否为JSON格式转义特殊字符
  * @return String 应用模板后的消息
  */
-String PushManager::applyTemplate(const String& templateStr, const PushContext& context) {
+String PushManager::applyTemplate(const String& templateStr, const PushContext& context, bool escapeForJson) {
     String result = templateStr;
     
     // 替换占位符
@@ -562,12 +563,14 @@ String PushManager::applyTemplate(const String& templateStr, const PushContext& 
     result.replace("{timestamp}", formatTimestamp(context.timestamp));
     result.replace("{sms_id}", String(context.smsRecordId));
     
-    // 转义特殊字符（用于JSON）
-    result.replace("\\", "\\\\");
-    result.replace("\"", "\\\"");
-    result.replace("\n", "\\n");
-    result.replace("\r", "\\r");
-    result.replace("\t", "\\t");
+    // 只有在需要JSON转义时才转义特殊字符
+    if (escapeForJson) {
+        result.replace("\\", "\\\\");
+        result.replace("\"", "\\\"");
+        result.replace("\n", "\\n");
+        result.replace("\r", "\\r");
+        result.replace("\t", "\\t");
+    }
     
     return result;
 }

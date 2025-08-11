@@ -7,6 +7,8 @@
 
 #include "gsm_service.h"
 #include "config_manager.h"
+#include "log_manager.h"
+#include "../../include/config.h"
 #include <Arduino.h>
 
 // 外部串口对象
@@ -56,48 +58,130 @@ bool GsmService::initialize() {
     
     moduleStatus = GSM_MODULE_INITIALIZING;
     
-    // 等待模块准备就绪
+    // 显示串口配置信息
+    Serial.printf("串口配置: 波特率=%d, RX引脚=%d, TX引脚=%d\n", SIM_BAUD_RATE, SIM_RX_PIN, SIM_TX_PIN);
+    
+    // 清空串口缓冲区
+    clearSerialBuffer();
+    
+    // 等待模块准备就绪（增加等待时间）
+    Serial.println("等待GSM模块启动...");
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    
+    // 多次尝试检查模块响应
+    bool moduleResponding = false;
+    for (int attempt = 1; attempt <= 5; attempt++) {
+        Serial.printf("第%d次尝试连接GSM模块...\n", attempt);
+        
+        // 彻底清空缓冲区
+        clearSerialBuffer();
+        
+        // 发送简单的AT命令，使用改进的发送方法
+        simSerial.print("AT\r\n");
+        simSerial.flush();
+        Serial.println("发送: AT");
+        
+        // 等待模块处理
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+        
+        // 等待响应
+        String response = waitForResponse(5000); // 增加超时时间
+        Serial.printf("收到响应: '%s'\n", response.c_str());
+        
+        if (response.indexOf("OK") != -1) {
+            moduleResponding = true;
+            Serial.println("✓ GSM模块响应正常");
+            break;
+        }
+        
+        // 如果没有响应，等待后重试
+        if (attempt < 5) {
+            Serial.println("模块无响应，等待3秒后重试...");
+            vTaskDelay(3000 / portTICK_PERIOD_MS);
+        }
+    }
+    
+    if (!moduleResponding) {
+        Serial.println("⚠️ 模块无响应，尝试硬件复位...");
+        
+        // 尝试硬件复位（如果DTR引脚已连接）
+        if (DTR_PIN != -1) {
+            pinMode(DTR_PIN, OUTPUT);
+            digitalWrite(DTR_PIN, HIGH);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            digitalWrite(DTR_PIN, LOW);
+            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            
+            // 复位后再次尝试通信
+            clearSerialBuffer();
+            simSerial.print("AT\r\n");
+            simSerial.flush();
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+            
+            String resetResponse = waitForResponse(5000);
+            if (resetResponse.indexOf("OK") != -1) {
+                Serial.println("✓ 硬件复位后模块响应正常");
+                moduleResponding = true;
+            } else {
+                Serial.println("❌ 硬件复位后模块仍无响应");
+            }
+        }
+        
+        if (!moduleResponding) {
+            setError("模块无响应，请检查接线和电源");
+            moduleStatus = GSM_MODULE_ERROR;
+            return false;
+        }
+    }
+    
+    // 简化初始化流程，只保留基本功能
+    LogManager& logger = LogManager::getInstance();
+    
+    // 保持回显开启，确保通信稳定
+    Serial.println("保持AT命令回显开启，确保通信稳定");
+    
+    // 等待模块稳定
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     
-    // 检查模块是否响应
-    if (!isModuleOnline()) {
-        setError("模块无响应，请检查接线和电源");
-        moduleStatus = GSM_MODULE_ERROR;
-        return false;
-    }
-    
-    // 关闭回显，简化响应解析
-    if (!sendAtCommand("ATE0", "OK", gsmConfig.commandTimeout)) {
-        Serial.println("关闭回显失败，可能影响响应解析。");
+    // 设置短信PDU模式（用于PDU解码）
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    if (sendAtCommand("AT+CMGF=0", "OK", 5000)) {
+        Serial.println("✓ 短信PDU模式已设置");
     } else {
-        Serial.println("已关闭模块回显。");
+        Serial.println("⚠️ 短信PDU模式设置失败");
     }
     
-    // 检查SIM卡状态
-    if (!isSimCardReady()) {
-        setError("SIM卡未就绪");
-        moduleStatus = GSM_MODULE_ERROR;
-        return false;
+    // 配置短信通知模式
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", 5000)) {
+        Serial.println("✓ 短信通知模式已配置");
+    } else {
+        Serial.println("⚠️ 短信通知模式配置失败");
     }
     
-    // 等待网络注册（使用配置的超时时间）
-    if (!waitForNetworkRegistration(gsmConfig.initTimeout)) {
-        setError("网络注册失败，请检查SIM卡和天线");
-        moduleStatus = GSM_MODULE_ERROR;
-        return false;
-    }
-    
-    // 配置短信通知
-    if (!configureSmsNotification()) {
-        Serial.println("配置短信通知失败，但不影响基础功能。");
-    }
-    
-    // 获取短信中心号码（仅获取一次，后续模块可复用）
+    // 获取短信中心号码
+    vTaskDelay(500 / portTICK_PERIOD_MS);
     smsCenterNumber = getSmsCenterNumber();
     if (smsCenterNumber.length() > 0) {
-        Serial.printf("成功获取短信中心号码: %s\n", smsCenterNumber.c_str());
+        Serial.printf("✓ 短信中心号码: %s\n", smsCenterNumber.c_str());
     } else {
-        Serial.println("警告: 无法获取短信中心号码，短信功能可能受影响。");
+        Serial.println("⚠️ 无法获取短信中心号码");
+    }
+    
+    // 启用电话功能
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    if (sendAtCommand("AT+CLIP=1", "OK", 5000)) {
+        Serial.println("✓ 来电显示已启用");
+    } else {
+        Serial.println("⚠️ 来电显示启用失败");
+    }
+    
+    // 启用网络功能
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    if (sendAtCommand("AT+CGATT=1", "OK", 8000)) {
+        Serial.println("✓ 网络附着已启用");
+    } else {
+        Serial.println("⚠️ 网络附着启用失败");
     }
     
     moduleStatus = GSM_MODULE_ONLINE;
@@ -115,11 +199,20 @@ bool GsmService::initialize() {
  * @return false 命令执行失败
  */
 bool GsmService::sendAtCommand(const String& command, const String& expectedResponse, unsigned long timeout) {
+    // 清空缓冲区
     clearSerialBuffer();
     
+    // 发送命令前等待，确保模块准备就绪
+    vTaskDelay(200 / portTICK_PERIOD_MS);
+    
     // 发送命令
-    simSerial.println(command);
+    simSerial.print(command);
+    simSerial.print("\r\n");
+    simSerial.flush(); // 确保数据发送完毕
     Serial.printf("发送AT命令: %s\n", command.c_str());
+    
+    // 发送命令后等待，让模块开始处理
+    vTaskDelay(300 / portTICK_PERIOD_MS);
     
     String response = waitForResponse(timeout);
     
@@ -140,11 +233,20 @@ bool GsmService::sendAtCommand(const String& command, const String& expectedResp
  * @return String 响应内容
  */
 String GsmService::sendAtCommandWithResponse(const String& command, unsigned long timeout) {
+    // 清空缓冲区
     clearSerialBuffer();
     
+    // 发送命令前等待，确保模块准备就绪
+    vTaskDelay(200 / portTICK_PERIOD_MS);
+    
     // 发送命令
-    simSerial.println(command);
+    simSerial.print(command);
+    simSerial.print("\r\n");
+    simSerial.flush(); // 确保数据发送完毕
     Serial.printf("发送AT命令: %s\n", command.c_str());
+    
+    // 发送命令后等待，让模块开始处理
+    vTaskDelay(300 / portTICK_PERIOD_MS);
     
     return waitForResponse(timeout);
 }
@@ -374,8 +476,25 @@ bool GsmService::resetModule() {
  * @brief 清空串口缓冲区
  */
 void GsmService::clearSerialBuffer() {
-    while (simSerial.available()) {
+    // 更彻底的缓冲区清理
+    unsigned long startTime = millis();
+    int bytesCleared = 0;
+    
+    // 清理接收缓冲区
+    while (simSerial.available() && (millis() - startTime < 1000)) {
         simSerial.read();
+        bytesCleared++;
+        vTaskDelay(1);
+    }
+    
+    // 确保发送缓冲区也被清空
+    simSerial.flush();
+    
+    // 额外等待，确保模块处理完毕
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    
+    if (bytesCleared > 0) {
+        Serial.printf("清理了 %d 字节的缓冲区数据\n", bytesCleared);
     }
 }
 
@@ -445,13 +564,90 @@ void GsmService::setError(const String& error) {
 String GsmService::waitForResponse(unsigned long timeout) {
     unsigned long startTime = millis();
     String response = "";
+    String line = "";
+    bool dataReceived = false;
+    
+    Serial.printf("等待响应，超时时间: %lu ms\n", timeout);
     
     while (millis() - startTime < timeout) {
         if (simSerial.available()) {
+            if (!dataReceived) {
+                dataReceived = true;
+                Serial.println("开始接收数据...");
+            }
+            
             char c = simSerial.read();
             response += c;
+            
+            // 简化调试输出，只显示可打印字符
+            if (c >= 32 && c <= 126) {
+                Serial.printf("%c", c);
+            } else if (c == '\n') {
+                Serial.print("\n");
+            }
+            
+            // 处理每一行
+            if (c == '\n') {
+                line.trim();
+                
+                // 检查是否收到结束标志
+                if (line == "OK" || line == "ERROR" || 
+                    line.startsWith("ERROR:") || line.startsWith("+CME ERROR:") || 
+                    line.startsWith("+CMS ERROR:")) {
+                    // 收到结束标志，立即返回
+                    Serial.printf("\n收到结束标志: %s\n", line.c_str());
+                    return response;
+                }
+                
+                // 对于某些命令，特定的响应行可以作为结束标志（关闭回显后可能不返回OK）
+                if (line.startsWith("+CPIN:") || line.startsWith("+CREG:") || 
+                    line.startsWith("+CSQ:") || line.startsWith("+CIMI")) {
+                    Serial.printf("\n收到有效响应: %s\n", line.c_str());
+                    // 等待一小段时间看是否还有OK，如果没有就直接返回
+                    unsigned long waitStart = millis();
+                    bool foundOK = false;
+                    while (millis() - waitStart < 500) { // 等待500ms
+                        if (simSerial.available()) {
+                            char c = simSerial.read();
+                            response += c;
+                            if (c == '\n') {
+                                String tempLine = "";
+                                // 从response末尾向前找到最后一行
+                                int lastLF = response.lastIndexOf('\n', response.length() - 2);
+                                if (lastLF != -1) {
+                                    tempLine = response.substring(lastLF + 1);
+                                    tempLine.trim();
+                                    if (tempLine == "OK") {
+                                        foundOK = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        vTaskDelay(1);
+                    }
+                    if (foundOK) {
+                        Serial.println("\n收到OK确认");
+                    } else {
+                        Serial.println("\n未收到OK，但有效响应已接收");
+                    }
+                    return response;
+                }
+                
+                // 重置行缓冲
+                line = "";
+            } else if (c != '\r') {
+                // 忽略回车符，只处理换行符
+                line += c;
+            }
         }
         vTaskDelay(1);
+    }
+    
+    if (!dataReceived) {
+        Serial.println("超时：未收到任何数据");
+    } else {
+        Serial.println("\n超时：数据接收不完整");
     }
     
     return response;

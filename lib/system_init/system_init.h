@@ -102,6 +102,13 @@ private:
      * @param error 错误信息
      */
     void setError(const String& error);
+    
+    /**
+     * @brief 执行开机自动拨号功能
+     * 
+     * 检测运营商类型，如果是移动则自动拨打1008611并等待7秒后挂断
+     */
+    void performStartupCall();
 };
 
 /**

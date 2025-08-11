@@ -15,6 +15,9 @@
 #include "../database_manager/database_manager.h"
 #include "../wifi_manager/wifi_manager.h"
 #include "../web_server/web_server.h"
+#include "../gsm_service/gsm_service.h"
+#include "../carrier_config/carrier_config.h"
+#include "../phone_caller/phone_caller.h"
 #include <Arduino.h>
 
 /**
@@ -300,6 +303,9 @@ bool SystemInit::start() {
     setSystemStatus(SYSTEM_RUNNING);
     LogManager::getInstance().printSeparator("系统启动完成，开始运行");
     
+    // 执行开机自动拨号功能
+    performStartupCall();
+    
     return true;
 }
 
@@ -398,4 +404,85 @@ void system_init_task(void *pvParameters) {
     
     // 删除此任务
     vTaskDelete(NULL);
+}
+
+/**
+ * @brief 执行开机自动拨号功能
+ * 
+ * 检测运营商类型，如果是移动则自动拨打1008611并等待7秒后挂断
+ */
+void SystemInit::performStartupCall() {
+    LOG_INFO(LOG_MODULE_SYSTEM, "开始执行开机自动拨号检测...");
+    
+    // 获取GSM服务实例
+    GsmService& gsmService = GsmService::getInstance();
+    
+    // 检查GSM模块是否在线
+    if (!gsmService.isModuleOnline()) {
+        LOG_WARN(LOG_MODULE_SYSTEM, "GSM模块未在线，跳过开机拨号");
+        return;
+    }
+    
+    // 检查网络是否就绪
+    if (gsmService.getNetworkStatus() != GSM_NETWORK_REGISTERED_HOME && 
+        gsmService.getNetworkStatus() != GSM_NETWORK_REGISTERED_ROAMING) {
+        LOG_WARN(LOG_MODULE_SYSTEM, "网络未注册，跳过开机拨号");
+        return;
+    }
+    
+    // 获取IMSI号码
+    String imsi = gsmService.getImsi();
+    if (imsi.length() == 0) {
+        LOG_WARN(LOG_MODULE_SYSTEM, "无法获取IMSI号码，跳过开机拨号");
+        return;
+    }
+    
+    LOG_INFO(LOG_MODULE_SYSTEM, "获取到IMSI: " + imsi);
+    
+    // 获取运营商配置实例并识别运营商
+    CarrierConfig& carrierConfig = CarrierConfig::getInstance();
+    CarrierType carrierType = carrierConfig.identifyCarrier(imsi);
+    
+    // 检查是否为中国移动
+    if (carrierType == CARRIER_CHINA_MOBILE) {
+        LOG_INFO(LOG_MODULE_SYSTEM, "检测到中国移动网络，开始自动拨号1008611...");
+        
+        // 获取电话拨打器实例
+        PhoneCaller phoneCaller;
+        
+        // 拨打1008611并等待7秒后挂断
+        PhoneCallResult result = phoneCaller.makeCallAndWait("1008611", 7);
+        
+        // 处理拨号结果
+        switch (result) {
+            case CALL_SUCCESS:
+                LOG_INFO(LOG_MODULE_SYSTEM, "开机自动拨号成功完成");
+                break;
+            case CALL_ERROR_NETWORK_NOT_READY:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: 网络未就绪");
+                break;
+            case CALL_ERROR_INVALID_NUMBER:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: 号码格式无效");
+                break;
+            case CALL_ERROR_AT_COMMAND_FAILED:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: AT命令执行失败");
+                break;
+            case CALL_ERROR_CALL_TIMEOUT:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: 拨打超时");
+                break;
+            case CALL_ERROR_HANGUP_FAILED:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: 挂断失败");
+                break;
+            default:
+                LOG_WARN(LOG_MODULE_SYSTEM, "开机自动拨号失败: 未知错误");
+                break;
+        }
+        
+        if (result != CALL_SUCCESS) {
+            LOG_WARN(LOG_MODULE_SYSTEM, "拨号错误详情: " + phoneCaller.getLastError());
+        }
+    } else {
+        String carrierName = carrierConfig.getCarrierName(carrierType);
+        LOG_INFO(LOG_MODULE_SYSTEM, "检测到运营商: " + carrierName + "，非移动网络，跳过开机拨号");
+    }
 }

@@ -1,0 +1,856 @@
+/**
+ * @file terminal_manager.cpp
+ * @brief 终端管理器实现 - 提供SMS转发规则的数据库配置管理功能和CLI接口
+ * @author ESP-SMS-Relay Project
+ * @date 2024
+ */
+
+#include "terminal_manager.h"
+#include "database_manager.h"
+#include "log_manager.h"
+#include <regex>
+
+// 默认配置
+const TerminalConfig TerminalManager::DEFAULT_CONFIG = {
+    .enabled = true,
+    .maxRules = 100,
+    .enableCache = true,
+    .cacheSize = 50,
+    .enableValidation = true,
+    .enableLogging = true
+};
+
+// ==================== 单例实现 ====================
+
+TerminalManager& TerminalManager::getInstance() {
+    static TerminalManager instance;
+    return instance;
+}
+
+TerminalManager::TerminalManager() 
+    : initialized(false), cliRunning(false), ruleManager(nullptr), config(DEFAULT_CONFIG) {
+    ruleManager = new ForwardRuleManager();
+}
+
+TerminalManager::~TerminalManager() {
+    cleanup();
+    if (ruleManager) {
+        delete ruleManager;
+        ruleManager = nullptr;
+    }
+}
+
+// ==================== 初始化和清理 ====================
+
+bool TerminalManager::initialize() {
+    if (initialized) {
+        return true;
+    }
+    
+    // 初始化规则管理器
+    if (!ruleManager || !ruleManager->initialize()) {
+        lastError = "Failed to initialize rule manager";
+        return false;
+    }
+    
+    initialized = true;
+    
+    if (config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "TerminalManager initialized successfully");
+    }
+    
+    return true;
+}
+
+void TerminalManager::cleanup() {
+    if (cliRunning) {
+        stopCLI();
+    }
+    
+    if (ruleManager) {
+        ruleManager->cleanup();
+    }
+    
+    initialized = false;
+    
+    if (config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "TerminalManager cleaned up");
+    }
+}
+
+// ==================== 转发规则管理接口实现 ====================
+
+int TerminalManager::addForwardRule(const ForwardRule& rule) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return -1;
+    }
+    
+    if (config.enableValidation) {
+        RuleValidationError validationResult = ruleManager->validateRule(rule);
+        if (validationResult != RULE_VALID) {
+            lastError = "Rule validation failed: " + 
+                       ForwardRuleManager::getValidationErrorDescription(validationResult);
+            return -1;
+        }
+    }
+    
+    int ruleId = ruleManager->addRule(rule);
+    if (ruleId > 0 && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Added forward rule: " + rule.ruleName + " (ID: " + String(ruleId) + ")");
+    }
+    
+    return ruleId;
+}
+
+bool TerminalManager::updateForwardRule(const ForwardRule& rule) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    if (config.enableValidation) {
+        RuleValidationError validationResult = ruleManager->validateRule(rule);
+        if (validationResult != RULE_VALID) {
+            lastError = "Rule validation failed: " + 
+                       ForwardRuleManager::getValidationErrorDescription(validationResult);
+            return false;
+        }
+    }
+    
+    bool result = ruleManager->updateRule(rule);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Updated forward rule: " + rule.ruleName + " (ID: " + String(rule.id) + ")");
+    }
+    
+    return result;
+}
+
+bool TerminalManager::deleteForwardRule(int ruleId) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->deleteRule(ruleId);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Deleted forward rule ID: " + String(ruleId));
+    }
+    
+    return result;
+}
+
+ForwardRule TerminalManager::getForwardRule(int ruleId) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        ForwardRule emptyRule;
+        emptyRule.id = -1;
+        return emptyRule;
+    }
+    
+    return ruleManager->getRule(ruleId);
+}
+
+std::vector<ForwardRule> TerminalManager::getForwardRules(const RuleQueryCondition& condition) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return std::vector<ForwardRule>();
+    }
+    
+    return ruleManager->getRules(condition);
+}
+
+// ==================== 规则状态管理接口实现 ====================
+
+bool TerminalManager::enableRule(int ruleId) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->enableRule(ruleId);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Enabled rule ID: " + String(ruleId));
+    }
+    
+    return result;
+}
+
+bool TerminalManager::disableRule(int ruleId) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->disableRule(ruleId);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Disabled rule ID: " + String(ruleId));
+    }
+    
+    return result;
+}
+
+bool TerminalManager::setRulePriority(int ruleId, int priority) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->setRulePriority(ruleId, priority);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Set rule ID " + String(ruleId) + " priority to " + String(priority));
+    }
+    
+    return result;
+}
+
+// ==================== 规则测试和验证接口实现 ====================
+
+bool TerminalManager::testRule(int ruleId, const String& sender, const String& content) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    return ruleManager->testRuleMatch(ruleId, sender, content);
+}
+
+bool TerminalManager::validateRuleConfig(const ForwardRule& rule) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    RuleValidationError result = ruleManager->validateRule(rule);
+    if (result != RULE_VALID) {
+        lastError = ForwardRuleManager::getValidationErrorDescription(result);
+        return false;
+    }
+    
+    return true;
+}
+
+// ==================== 统计信息接口实现 ====================
+
+int TerminalManager::getRuleCount() {
+    if (!initialized || !ruleManager) {
+        return 0;
+    }
+    
+    return ruleManager->getRuleCount();
+}
+
+int TerminalManager::getEnabledRuleCount() {
+    if (!initialized || !ruleManager) {
+        return 0;
+    }
+    
+    return ruleManager->getEnabledRuleCount();
+}
+
+std::vector<ForwardRule> TerminalManager::getMostUsedRules(int limit) {
+    if (!initialized || !ruleManager) {
+        return std::vector<ForwardRule>();
+    }
+    
+    return ruleManager->getMostUsedRules(limit);
+}
+
+// ==================== 批量操作接口实现 ====================
+
+bool TerminalManager::enableAllRules() {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->enableAllRules();
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Enabled all rules");
+    }
+    
+    return result;
+}
+
+bool TerminalManager::disableAllRules() {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->disableAllRules();
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Disabled all rules");
+    }
+    
+    return result;
+}
+
+bool TerminalManager::deleteAllRules() {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->deleteAllRules();
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Deleted all rules");
+    }
+    
+    return result;
+}
+
+bool TerminalManager::importRules(const std::vector<ForwardRule>& rules) {
+    if (!initialized || !ruleManager) {
+        lastError = "Terminal manager not initialized";
+        return false;
+    }
+    
+    bool result = ruleManager->importRules(rules);
+    if (result && config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "Imported " + String(rules.size()) + " rules");
+    }
+    
+    return result;
+}
+
+std::vector<ForwardRule> TerminalManager::exportRules() {
+    if (!initialized || !ruleManager) {
+        return std::vector<ForwardRule>();
+    }
+    
+    return ruleManager->getRules();
+}
+
+// ==================== CLI命令行接口实现 ====================
+
+void TerminalManager::startCLI() {
+    if (!initialized) {
+        Serial.println("Error: Terminal manager not initialized");
+        return;
+    }
+    
+    cliRunning = true;
+    printWelcome();
+    printPrompt();
+    
+    if (config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "CLI started");
+    }
+}
+
+void TerminalManager::stopCLI() {
+    cliRunning = false;
+    Serial.println("\nCLI stopped.");
+    
+    if (config.enableLogging) {
+        LogManager::getInstance().logInfo(LOG_MODULE_SYSTEM, "CLI stopped");
+    }
+}
+
+bool TerminalManager::isCLIRunning() {
+    return cliRunning;
+}
+
+void TerminalManager::handleSerialInput() {
+    if (!cliRunning) {
+        return;
+    }
+    
+    while (Serial.available()) {
+        char c = Serial.read();
+        
+        if (c == '\n' || c == '\r') {
+            if (inputBuffer.length() > 0) {
+                Serial.println(); // 换行
+                processCommand(inputBuffer);
+                inputBuffer = "";
+                printPrompt();
+            }
+        } else if (c == '\b' || c == 127) { // 退格键
+            if (inputBuffer.length() > 0) {
+                inputBuffer.remove(inputBuffer.length() - 1);
+                Serial.print("\b \b"); // 删除字符
+            }
+        } else if (c >= 32 && c <= 126) { // 可打印字符
+            inputBuffer += c;
+            Serial.print(c); // 回显
+        }
+    }
+}
+
+bool TerminalManager::processCommand(const String& command) {
+    if (command.isEmpty()) {
+        return true;
+    }
+    
+    std::vector<String> args;
+    String cmd = parseCommand(command, args);
+    cmd.toLowerCase();
+    
+    // 执行命令
+    if (cmd == "help" || cmd == "h") {
+        executeHelpCommand(args);
+    } else if (cmd == "list" || cmd == "ls") {
+        executeListCommand(args);
+    } else if (cmd == "add") {
+        executeAddCommand(args);
+    } else if (cmd == "delete" || cmd == "del" || cmd == "rm") {
+        executeDeleteCommand(args);
+    } else if (cmd == "enable" || cmd == "en") {
+        executeEnableCommand(args);
+    } else if (cmd == "disable" || cmd == "dis") {
+        executeDisableCommand(args);
+    } else if (cmd == "test") {
+        executeTestCommand(args);
+    } else if (cmd == "status" || cmd == "stat") {
+        executeStatusCommand(args);
+    } else if (cmd == "import") {
+        executeImportCommand(args);
+    } else if (cmd == "export") {
+        executeExportCommand(args);
+    } else if (cmd == "exit" || cmd == "quit" || cmd == "q") {
+        stopCLI();
+        return false;
+    } else if (cmd == "clear" || cmd == "cls") {
+        Serial.print("\033[2J\033[H"); // 清屏
+    } else {
+        Serial.println("未知命令: " + cmd);
+        Serial.println("输入 'help' 查看可用命令。");
+    }
+    
+    return true;
+}
+
+// ==================== CLI命令解析 ====================
+
+String TerminalManager::parseCommand(const String& command, std::vector<String>& args) {
+    args.clear();
+    
+    String trimmed = command;
+    trimmed.trim();
+    
+    if (trimmed.isEmpty()) {
+        return "";
+    }
+    
+    // 支持引号的参数解析
+    int pos = 0;
+    String cmd = "";
+    bool firstToken = true;
+    
+    while (pos < trimmed.length()) {
+        // 跳过前导空格
+        while (pos < trimmed.length() && trimmed.charAt(pos) == ' ') {
+            pos++;
+        }
+        
+        if (pos >= trimmed.length()) {
+            break;
+        }
+        
+        String token = "";
+        bool inQuotes = false;
+        char quoteChar = '\0';
+        
+        // 解析一个token
+        while (pos < trimmed.length()) {
+            char c = trimmed.charAt(pos);
+            
+            if (!inQuotes) {
+                if (c == '"' || c == '\'') {
+                    // 开始引号
+                    inQuotes = true;
+                    quoteChar = c;
+                    pos++;
+                    continue;
+                } else if (c == ' ') {
+                    // 空格结束token
+                    break;
+                }
+            } else {
+                if (c == quoteChar) {
+                    // 结束引号
+                    inQuotes = false;
+                    pos++;
+                    continue;
+                } else if (c == '\\' && pos + 1 < trimmed.length()) {
+                    // 转义字符
+                    pos++;
+                    if (pos < trimmed.length()) {
+                        char nextChar = trimmed.charAt(pos);
+                        if (nextChar == 'n') {
+                            token += '\n';
+                        } else if (nextChar == 't') {
+                            token += '\t';
+                        } else if (nextChar == 'r') {
+                            token += '\r';
+                        } else if (nextChar == '\\') {
+                            token += '\\';
+                        } else if (nextChar == '"') {
+                            token += '"';
+                        } else if (nextChar == '\'') {
+                            token += '\'';
+                        } else {
+                            token += nextChar;
+                        }
+                    }
+                    pos++;
+                    continue;
+                }
+            }
+            
+            token += c;
+            pos++;
+        }
+        
+        // 添加解析的token（包括空字符串）
+        if (firstToken) {
+            cmd = token;
+            firstToken = false;
+        } else {
+            args.push_back(token);
+        }
+    }
+    
+    return cmd;
+}
+
+// ==================== CLI命令执行实现 ====================
+
+void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
+    Serial.println("\n=== ESP-SMS-Relay 终端管理器 CLI ===");
+    Serial.println("可用命令:");
+    Serial.println();
+    Serial.println("通用命令:");
+    Serial.println("  help, h                    - 显示此帮助信息");
+    Serial.println("  status, stat               - 显示系统状态");
+    Serial.println("  clear, cls                 - 清屏");
+    Serial.println("  exit, quit, q              - 退出CLI");
+    Serial.println();
+    Serial.println("规则管理:");
+    Serial.println("  list, ls [enabled|disabled] - 列出转发规则");
+    Serial.println("  add <名称> <发送方> <类型> <配置> [关键词] [默认转发] - 添加新规则");
+    Serial.println("  delete, del, rm <id>       - 根据ID删除规则");
+    Serial.println("  enable, en <id>            - 根据ID启用规则");
+    Serial.println("  disable, dis <id>          - 根据ID禁用规则");
+    Serial.println("  test <id> <发送方> <内容>   - 测试规则匹配");
+    Serial.println();
+    Serial.println("数据管理:");
+    Serial.println("  import                     - 导入规则（交互式）");
+    Serial.println("  export                     - 导出所有规则");
+    Serial.println();
+    Serial.println("示例:");
+    Serial.println("  add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY\",\"msgtype\":\"text\"}\" \"余额\" false");
+    Serial.println("  add \"钉钉通知\" \"10086\" \"dingtalk\" \"{\"webhook_url\":\"https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN\",\"msgtype\":\"text\",\"secret\":\"YOUR_SECRET\"}\" \"流量\" false");
+    Serial.println("  add \"自定义推送\" \"*\" \"webhook\" \"{\"url\":\"https://api.example.com/webhook\",\"method\":\"POST\",\"headers\":{\"Authorization\":\"Bearer token\"}}\" \"\" false");
+    Serial.println("  add \"默认转发\" \"*\" \"wechat\" \"{\"webhook_url\":\"URL\"}\" \"\" true");
+    Serial.println("  list enabled");
+    Serial.println("  test 1 \"95588\" \"您的余额为1000元\"");
+    Serial.println();
+    Serial.println("配置格式说明:");
+    Serial.println("  企业微信(wechat): {\"webhook_url\":\"URL\",\"msgtype\":\"text\"}");
+    Serial.println("  钉钉(dingtalk): {\"webhook_url\":\"URL\",\"msgtype\":\"text\",\"secret\":\"密钥\"}");
+    Serial.println("  自定义(webhook): {\"url\":\"URL\",\"method\":\"POST\",\"headers\":{...}}");
+}
+
+void TerminalManager::executeListCommand(const std::vector<String>& args) {
+    RuleQueryCondition condition;
+    
+    // 解析参数
+    if (args.size() > 0) {
+        String filter = args[0];
+        filter.toLowerCase();
+        
+        if (filter == "enabled") {
+            condition.filterByEnabled = true;
+            condition.enabledValue = true;
+        } else if (filter == "disabled") {
+            condition.filterByEnabled = true;
+            condition.enabledValue = false;
+        }
+    }
+    
+    condition.orderByPriority = true;
+    
+    std::vector<ForwardRule> rules = getForwardRules(condition);
+    
+    if (rules.empty()) {
+        Serial.println("未找到规则。");
+        return;
+    }
+    
+    Serial.println("\n=== 转发规则 ===");
+    printRules(rules);
+}
+
+void TerminalManager::executeAddCommand(const std::vector<String>& args) {
+    if (args.size() < 4) {
+        Serial.println("用法: add <名称> <发送方模式> <推送类型> <推送配置> [关键词] [是否默认转发]");
+        Serial.println("示例: add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook\":\"...\"}\" \"余额\" false");
+        Serial.println("参数说明:");
+        Serial.println("  名称: 规则名称");
+        Serial.println("  发送方模式: 发送方号码或模式");
+        Serial.println("  推送类型: wechat/dingtalk/webhook等");
+        Serial.println("  推送配置: JSON格式的推送配置");
+        Serial.println("  关键词: 可选，短信内容关键词过滤");
+        Serial.println("  是否默认转发: 可选，true/false，默认为false");
+        return;
+    }
+    
+    ForwardRule rule;
+    rule.ruleName = args[0];  // 使用 ruleName 而不是 name
+    rule.sourceNumber = args[1];  // 使用 sourceNumber 而不是 senderPattern
+    rule.pushType = args[2];
+    rule.pushConfig = args[3];
+    rule.enabled = true;
+    rule.isDefaultForward = false;  // 默认不是默认转发规则
+    
+    // 可选参数
+    if (args.size() > 4) {
+        rule.keywords = args[4];  // 第5个参数是关键词
+    }
+    if (args.size() > 5) {
+        // 第6个参数是是否默认转发
+        String isDefaultStr = args[5];
+        isDefaultStr.toLowerCase();
+        if (isDefaultStr == "true" || isDefaultStr == "1" || isDefaultStr == "yes") {
+            rule.isDefaultForward = true;
+        } else if (isDefaultStr == "false" || isDefaultStr == "0" || isDefaultStr == "no") {
+            rule.isDefaultForward = false;
+        } else {
+            Serial.println("警告: 无效的默认转发参数 '" + args[5] + "'，使用默认值 false");
+            rule.isDefaultForward = false;
+        }
+    }
+    
+    int ruleId = addForwardRule(rule);
+    if (ruleId > 0) {
+        Serial.println("规则添加成功，ID: " + String(ruleId));
+        Serial.println("规则详情:");
+        Serial.println("  名称: " + rule.ruleName);
+        Serial.println("  发送方: " + rule.sourceNumber);
+        Serial.println("  推送类型: " + rule.pushType);
+        Serial.println("  关键词: " + (rule.keywords.isEmpty() ? "无" : rule.keywords));
+        Serial.println("  默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
+    } else {
+        Serial.println("添加规则失败: " + getLastError());
+    }
+}
+
+void TerminalManager::executeDeleteCommand(const std::vector<String>& args) {
+    if (args.size() < 1) {
+        Serial.println("用法: delete <规则ID>");
+        return;
+    }
+    
+    int ruleId = args[0].toInt();
+    if (ruleId <= 0) {
+        Serial.println("无效的规则ID: " + args[0]);
+        return;
+    }
+    
+    // 先显示要删除的规则
+    ForwardRule rule = getForwardRule(ruleId);
+    if (rule.id == -1) {
+        Serial.println("未找到规则: " + String(ruleId));
+        return;
+    }
+    
+    Serial.println("正在删除规则:");
+    printRule(rule);
+    
+    if (deleteForwardRule(ruleId)) {
+        Serial.println("规则删除成功。");
+    } else {
+        Serial.println("删除规则失败: " + getLastError());
+    }
+}
+
+void TerminalManager::executeEnableCommand(const std::vector<String>& args) {
+    if (args.size() < 1) {
+        Serial.println("用法: enable <规则ID>");
+        return;
+    }
+    
+    int ruleId = args[0].toInt();
+    if (ruleId <= 0) {
+        Serial.println("无效的规则ID: " + args[0]);
+        return;
+    }
+    
+    if (enableRule(ruleId)) {
+        Serial.println("规则启用成功。");
+    } else {
+        Serial.println("启用规则失败: " + getLastError());
+    }
+}
+
+void TerminalManager::executeDisableCommand(const std::vector<String>& args) {
+    if (args.size() < 1) {
+        Serial.println("用法: disable <规则ID>");
+        return;
+    }
+    
+    int ruleId = args[0].toInt();
+    if (ruleId <= 0) {
+        Serial.println("无效的规则ID: " + args[0]);
+        return;
+    }
+    
+    if (disableRule(ruleId)) {
+        Serial.println("规则禁用成功。");
+    } else {
+        Serial.println("禁用规则失败: " + getLastError());
+    }
+}
+
+void TerminalManager::executeTestCommand(const std::vector<String>& args) {
+    if (args.size() < 3) {
+        Serial.println("用法: test <规则ID> <发送方> <内容>");
+        Serial.println("示例: test 1 \"95588\" \"您的余额为1000元\"");
+        return;
+    }
+    
+    int ruleId = args[0].toInt();
+    if (ruleId <= 0) {
+        Serial.println("无效的规则ID: " + args[0]);
+        return;
+    }
+    
+    String sender = args[1];
+    String content = args[2];
+    
+    // 显示测试信息
+    Serial.println("\n测试规则ID: " + String(ruleId));
+    Serial.println("发送方: " + sender);
+    Serial.println("内容: " + content);
+    Serial.println();
+    
+    bool matches = testRule(ruleId, sender, content);
+    if (matches) {
+        Serial.println("✓ 规则匹配测试数据");
+    } else {
+        Serial.println("✗ 规则不匹配测试数据");
+    }
+}
+
+void TerminalManager::executeStatusCommand(const std::vector<String>& args) {
+    Serial.println("\n=== 终端管理器状态 ===");
+    Serial.println("已初始化: " + String(initialized ? "是" : "否"));
+    Serial.println("CLI运行中: " + String(cliRunning ? "是" : "否"));
+    Serial.println("总规则数: " + String(getRuleCount()));
+    Serial.println("已启用规则: " + String(getEnabledRuleCount()));
+    Serial.println("已禁用规则: " + String(getRuleCount() - getEnabledRuleCount()));
+    
+    if (!lastError.isEmpty()) {
+        Serial.println("最后错误: " + lastError);
+    }
+    
+    Serial.println("\n配置信息:");
+    Serial.println("  最大规则数: " + String(config.maxRules));
+    Serial.println("  缓存启用: " + String(config.enableCache ? "是" : "否"));
+    Serial.println("  验证启用: " + String(config.enableValidation ? "是" : "否"));
+    Serial.println("  日志启用: " + String(config.enableLogging ? "是" : "否"));
+}
+
+void TerminalManager::executeImportCommand(const std::vector<String>& args) {
+    Serial.println("导入功能尚未实现。");
+    Serial.println("此功能将允许从JSON格式导入规则。");
+}
+
+void TerminalManager::executeExportCommand(const std::vector<String>& args) {
+    std::vector<ForwardRule> rules = exportRules();
+    
+    if (rules.empty()) {
+        Serial.println("没有规则可导出。");
+        return;
+    }
+    
+    Serial.println("\n=== 导出规则 (JSON格式) ===");
+    Serial.println("[");
+    
+    for (size_t i = 0; i < rules.size(); i++) {
+        const ForwardRule& rule = rules[i];
+        Serial.println("  {");
+        Serial.println("    \"id\": " + String(rule.id) + ",");
+        Serial.println("    \"ruleName\": \"" + rule.ruleName + "\",");
+        Serial.println("    \"sourceNumber\": \"" + rule.sourceNumber + "\",");
+        Serial.println("    \"keywords\": \"" + rule.keywords + "\",");
+        Serial.println("    \"pushType\": \"" + rule.pushType + "\",");
+        Serial.println("    \"pushConfig\": " + rule.pushConfig + ",");
+        Serial.println("    \"enabled\": " + String(rule.enabled ? "true" : "false") + ",");
+        Serial.println("    \"isDefaultForward\": " + String(rule.isDefaultForward ? "true" : "false") + ",");
+        Serial.println("    \"createdAt\": \"" + rule.createdAt + "\",");
+        Serial.println("    \"updatedAt\": \"" + rule.updatedAt + "\"");
+        Serial.print("  }");
+        if (i < rules.size() - 1) {
+            Serial.println(",");
+        } else {
+            Serial.println();
+        }
+    }
+    
+    Serial.println("]");
+}
+
+// ==================== CLI辅助方法 ====================
+
+void TerminalManager::printPrompt() {
+    Serial.print("sms-relay> ");
+}
+
+void TerminalManager::printWelcome() {
+    Serial.println();
+    Serial.println("========================================");
+    Serial.println("  ESP-SMS-Relay 终端管理器 CLI");
+    Serial.println("========================================");
+    Serial.println("输入 'help' 查看可用命令。");
+    Serial.println("输入 'exit' 退出。");
+    Serial.println();
+}
+
+void TerminalManager::printRule(const ForwardRule& rule) {
+    Serial.println("  ID: " + String(rule.id));
+    Serial.println("  名称: " + rule.ruleName);
+    Serial.println("  来源号码: " + rule.sourceNumber);
+    Serial.println("  关键词: " + rule.keywords);
+    Serial.println("  推送类型: " + rule.pushType);
+    Serial.println("  推送配置: " + rule.pushConfig);
+    Serial.println("  启用状态: " + String(rule.enabled ? "是" : "否"));
+    Serial.println("  默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
+    Serial.println("  创建时间: " + rule.createdAt);
+    Serial.println("  更新时间: " + rule.updatedAt);
+    Serial.println();
+}
+
+void TerminalManager::printRules(const std::vector<ForwardRule>& rules) {
+    Serial.println("总计: " + String(rules.size()) + " 条规则\n");
+    
+    for (const ForwardRule& rule : rules) {
+        Serial.println("[" + String(rule.id) + "] " + rule.ruleName + 
+                      " (" + rule.pushType + ", " + String(rule.enabled ? "已启用" : "已禁用") + ")");
+        Serial.println("    来源: " + rule.sourceNumber);
+        if (!rule.keywords.isEmpty()) {
+            Serial.println("    关键词: " + rule.keywords);
+        }
+        Serial.println("    推送配置: " + rule.pushConfig);
+        Serial.println("    默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
+        Serial.println("    更新时间: " + rule.updatedAt);
+        Serial.println();
+    }
+}
+
+// ==================== 错误处理 ====================
+
+String TerminalManager::getLastError() {
+    if (!lastError.isEmpty()) {
+        return lastError;
+    }
+    
+    if (ruleManager) {
+        return ruleManager->getLastError();
+    }
+    
+    return "无错误";
+}

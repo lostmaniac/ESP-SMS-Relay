@@ -199,9 +199,10 @@ private:
      * @brief 应用消息模板
      * @param templateStr 模板字符串
      * @param context 推送上下文
+     * @param escapeForJson 是否为JSON格式转义特殊字符
      * @return String 应用模板后的消息
      */
-    String applyTemplate(const String& templateStr, const PushContext& context);
+    String applyTemplate(const String& templateStr, const PushContext& context, bool escapeForJson = false);
 
     /**
      * @brief 格式化时间戳
