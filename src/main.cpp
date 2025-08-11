@@ -19,6 +19,7 @@
 #include "carrier_config.h"
 #include "phone_caller.h"
 #include "uart_monitor.h"
+#include "push_manager.h"
 #include "config.h"
 
 // 全局管理器实例引用
@@ -26,6 +27,7 @@ TerminalManager& terminalManager = TerminalManager::getInstance();
 DatabaseManager& databaseManager = DatabaseManager::getInstance();
 LogManager& logManager = LogManager::getInstance();
 FilesystemManager& filesystemManager = FilesystemManager::getInstance();
+PushManager& pushManager = PushManager::getInstance();
 
 // 定义硬件串口
 HardwareSerial simSerial(SIM_SERIAL_NUM); // 使用配置的串口号
@@ -67,6 +69,13 @@ bool initializeSystem() {
         return false;
     }
     Serial.println("✓ Terminal Manager initialized");
+    
+    // 初始化推送管理器
+    if (!pushManager.initialize()) {
+        Serial.println("Failed to initialize Push Manager: " + pushManager.getLastError());
+        return false;
+    }
+    Serial.println("✓ Push Manager initialized");
     
     // 注意：UART监控任务将在GSM初始化完成后启动
     Serial.println("✓ UART Monitor Task will be started after GSM initialization");

@@ -28,11 +28,17 @@ void SmsHandler::processLine(const String& line) {
 void SmsHandler::processMessageBlock(const String& block) {
     LogManager& logger = LogManager::getInstance();
     
+    // 添加调试输出
+    logger.logInfo(LOG_MODULE_SMS, "📥 接收到PDU数据，长度: " + String(block.length()));
+    logger.logInfo(LOG_MODULE_SMS, "📥 PDU内容: " + block);
+    
     PDU pdu;
     if (!pdu.decodePDU(block.c_str())) {
-        logger.logError(LOG_MODULE_SMS, "PDU解码失败");
+        logger.logError(LOG_MODULE_SMS, "❌ PDU解码失败，PDU数据: " + block);
         return;
     }
+    
+    logger.logInfo(LOG_MODULE_SMS, "✅ PDU解码成功");
 
     int* concatInfo = pdu.getConcatInfo();
     if (concatInfo && concatInfo[0] != 0) {
@@ -178,9 +184,14 @@ void SmsHandler::processSmsComplete(const String& sender, const String& content,
  */
 int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, const String& timestamp) {
     DatabaseManager& dbManager = DatabaseManager::getInstance();
+    LogManager& logger = LogManager::getInstance();
+    
+    // 启用数据库调试模式
+    dbManager.setDebugMode(true);
     
     // 检查数据库是否就绪
     if (!dbManager.isReady()) {
+        logger.logError(LOG_MODULE_SMS, "❌ 数据库未就绪，无法存储短信");
         return -1;
     }
     
@@ -189,9 +200,24 @@ int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, 
     record.fromNumber = sender;
     record.content = content;
     record.receivedAt = time(nullptr); // 使用当前时间戳
+    record.toNumber = ""; // 设置默认值
+    record.ruleId = 0; // 设置默认值
+    record.forwarded = false; // 设置默认值
+    record.status = "received"; // 设置默认值
+    record.forwardedAt = ""; // 设置默认值
+    
+    logger.logInfo(LOG_MODULE_SMS, "📝 准备存储短信: 发送方=" + sender + ", 内容长度=" + String(content.length()));
     
     // 添加到数据库
-    return dbManager.addSMSRecord(record);
+    int recordId = dbManager.addSMSRecord(record);
+    
+    if (recordId <= 0) {
+        logger.logError(LOG_MODULE_SMS, "❌ 数据库存储失败: " + dbManager.getLastError());
+    } else {
+        logger.logInfo(LOG_MODULE_SMS, "✅ 短信存储成功，记录ID: " + String(recordId));
+    }
+    
+    return recordId;
 }
 
 /**
@@ -206,9 +232,17 @@ int SmsHandler::storeSmsToDatabase(const String& sender, const String& content, 
 bool SmsHandler::forwardSms(const String& sender, const String& content, const String& timestamp, int smsRecordId) {
     PushManager& pushManager = PushManager::getInstance();
     
-    // 检查推送管理器是否已初始化
-    if (!pushManager.initialize()) {
-        return false;
+    // 检查推送管理器是否已初始化，如果没有则初始化一次
+    static bool pushManagerInitialized = false;
+    if (!pushManagerInitialized) {
+        if (!pushManager.initialize()) {
+            LogManager::getInstance().logError(LOG_MODULE_SMS, "❌ 推送管理器初始化失败: " + pushManager.getLastError());
+            return false;
+        }
+        // 启用推送管理器调试模式
+        pushManager.setDebugMode(true);
+        pushManagerInitialized = true;
+        LogManager::getInstance().logInfo(LOG_MODULE_SMS, "✅ 推送管理器初始化成功");
     }
     
     // 构建推送上下文

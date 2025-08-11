@@ -6,8 +6,9 @@
  */
 
 #include "terminal_manager.h"
-#include "database_manager.h"
-#include "log_manager.h"
+#include "../database_manager/database_manager.h"
+#include "../log_manager/log_manager.h"
+#include "../push_manager/push_manager.h"
 #include <regex>
 
 // 默认配置
@@ -519,11 +520,19 @@ String TerminalManager::parseCommand(const String& command, std::vector<String>&
 // ==================== CLI命令执行实现 ====================
 
 void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
+    // 如果有参数，显示特定渠道的详细配置说明
+    if (args.size() > 0) {
+        String channelName = args[0];
+        channelName.toLowerCase();
+        showChannelConfigHelp(channelName);
+        return;
+    }
+    
     Serial.println("\n=== ESP-SMS-Relay 终端管理器 CLI ===");
     Serial.println("可用命令:");
     Serial.println();
     Serial.println("通用命令:");
-    Serial.println("  help, h                    - 显示此帮助信息");
+    Serial.println("  help, h [渠道名]           - 显示帮助信息，可指定渠道查看详细配置");
     Serial.println("  status, stat               - 显示系统状态");
     Serial.println("  clear, cls                 - 清屏");
     Serial.println("  exit, quit, q              - 退出CLI");
@@ -540,18 +549,24 @@ void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
     Serial.println("  import                     - 导入规则（交互式）");
     Serial.println("  export                     - 导出所有规则");
     Serial.println();
-    Serial.println("示例:");
-    Serial.println("  add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY\",\"msgtype\":\"text\"}\" \"余额\" false");
-    Serial.println("  add \"钉钉通知\" \"10086\" \"dingtalk\" \"{\"webhook_url\":\"https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN\",\"msgtype\":\"text\",\"secret\":\"YOUR_SECRET\"}\" \"流量\" false");
-    Serial.println("  add \"自定义推送\" \"*\" \"webhook\" \"{\"url\":\"https://api.example.com/webhook\",\"method\":\"POST\",\"headers\":{\"Authorization\":\"Bearer token\"}}\" \"\" false");
-    Serial.println("  add \"默认转发\" \"*\" \"wechat\" \"{\"webhook_url\":\"URL\"}\" \"\" true");
-    Serial.println("  list enabled");
-    Serial.println("  test 1 \"95588\" \"您的余额为1000元\"");
+    
+    // 显示可用的推送渠道
+    showAvailableChannels();
+    
+    Serial.println("\n=== 快速配置示例 ===");
+    Serial.println("企业微信:");
+    Serial.println("  add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY\"}\" \"余额\" false");
     Serial.println();
-    Serial.println("配置格式说明:");
-    Serial.println("  企业微信(wechat): {\"webhook_url\":\"URL\",\"msgtype\":\"text\"}");
-    Serial.println("  钉钉(dingtalk): {\"webhook_url\":\"URL\",\"msgtype\":\"text\",\"secret\":\"密钥\"}");
-    Serial.println("  自定义(webhook): {\"url\":\"URL\",\"method\":\"POST\",\"headers\":{...}}");
+    Serial.println("钉钉:");
+    Serial.println("  add \"钉钉通知\" \"10086\" \"dingtalk\" \"{\"webhook_url\":\"https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN\"}\" \"流量\" false");
+    Serial.println();
+    Serial.println("自定义Webhook:");
+    Serial.println("  add \"自定义推送\" \"*\" \"webhook\" \"{\"webhook_url\":\"https://api.example.com/webhook\",\"method\":\"POST\"}\" \"\" false");
+    Serial.println();
+    Serial.println("💡 提示: 输入 'help 渠道名' 查看详细配置说明，例如:");
+    Serial.println("  help wechat    - 查看企业微信详细配置");
+    Serial.println("  help dingtalk  - 查看钉钉详细配置");
+    Serial.println("  help webhook   - 查看Webhook详细配置");
 }
 
 void TerminalManager::executeListCommand(const std::vector<String>& args) {
@@ -839,6 +854,200 @@ void TerminalManager::printRules(const std::vector<ForwardRule>& rules) {
         Serial.println("    更新时间: " + rule.updatedAt);
         Serial.println();
     }
+}
+
+// ==================== 动态帮助内容生成 ====================
+
+/**
+ * @brief 显示可用的推送渠道
+ */
+void TerminalManager::showAvailableChannels() {
+    PushManager& pushManager = PushManager::getInstance();
+    std::vector<String> channels = pushManager.getAvailableChannels();
+    
+    if (channels.empty()) {
+        Serial.println("\n❌ 暂无可用的推送渠道");
+        return;
+    }
+    
+    Serial.println("\n=== 可用推送渠道 ===");
+    for (const String& channelName : channels) {
+        PushChannelRegistry::ChannelMetadata metadata = pushManager.getChannelMetadata(channelName);
+        Serial.println("📡 " + channelName + " - " + metadata.description);
+    }
+    Serial.println("\n总计: " + String(channels.size()) + " 个推送渠道");
+}
+
+/**
+ * @brief 显示特定渠道的详细配置帮助
+ * @param channelName 渠道名称
+ */
+void TerminalManager::showChannelConfigHelp(const String& channelName) {
+    PushManager& pushManager = PushManager::getInstance();
+    std::vector<String> channels = pushManager.getAvailableChannels();
+    
+    // 检查渠道是否存在
+    bool channelExists = false;
+    for (const String& channel : channels) {
+        if (channel.equalsIgnoreCase(channelName)) {
+            channelExists = true;
+            break;
+        }
+    }
+    
+    if (!channelExists) {
+        Serial.println("\n❌ 未找到推送渠道: " + channelName);
+        Serial.println("\n可用渠道:");
+        for (const String& channel : channels) {
+            Serial.println("  - " + channel);
+        }
+        return;
+    }
+    
+    // 获取渠道的详细帮助信息
+    std::vector<PushChannelHelp> helpList = pushManager.getAllChannelHelp();
+    PushChannelHelp targetHelp;
+    bool helpFound = false;
+    
+    for (const PushChannelHelp& help : helpList) {
+        if (help.channelName.equalsIgnoreCase(channelName)) {
+            targetHelp = help;
+            helpFound = true;
+            break;
+        }
+    }
+    
+    if (!helpFound) {
+        Serial.println("\n❌ 无法获取渠道 " + channelName + " 的帮助信息");
+        return;
+    }
+    
+    // 获取渠道的配置示例
+    std::vector<PushChannelExample> examples = pushManager.getAllChannelExamples();
+    PushChannelExample targetExample;
+    bool exampleFound = false;
+    
+    for (const PushChannelExample& example : examples) {
+        if (example.channelName.equalsIgnoreCase(channelName)) {
+            targetExample = example;
+            exampleFound = true;
+            break;
+        }
+    }
+    
+    // 显示详细配置帮助
+    String upperChannelName = channelName;
+    upperChannelName.toUpperCase();
+    Serial.println("\n=== " + upperChannelName + " 推送渠道详细配置 ===");
+    Serial.println("📋 描述: " + targetHelp.description);
+    Serial.println();
+    
+    // 显示配置字段说明
+    if (!targetHelp.configFields.isEmpty()) {
+        Serial.println("⚙️  配置字段说明:");
+        Serial.println(targetHelp.configFields);
+        Serial.println();
+    }
+    
+    // 显示配置示例
+    if (exampleFound && !targetExample.configExample.isEmpty()) {
+        Serial.println("📝 配置示例:");
+        Serial.println(targetExample.configExample);
+        Serial.println();
+    }
+    
+    // 显示规则示例
+    if (!targetHelp.ruleExample.isEmpty()) {
+        Serial.println("🔧 完整规则示例:");
+        Serial.println(targetHelp.ruleExample);
+        Serial.println();
+    }
+    
+    // 显示使用说明
+    if (exampleFound && !targetExample.usage.isEmpty()) {
+        Serial.println("📖 使用说明:");
+        Serial.println(targetExample.usage);
+        Serial.println();
+    }
+    
+    // 显示故障排除
+    if (!targetHelp.troubleshooting.isEmpty()) {
+        Serial.println("🔍 故障排除:");
+        Serial.println(targetHelp.troubleshooting);
+        Serial.println();
+    }
+    
+    // 显示快速添加命令
+    Serial.println("⚡ 快速添加命令模板:");
+    Serial.println("add \"规则名称\" \"发送方号码\" \"" + channelName + "\" '{配置JSON}' \"关键词\" false");
+    Serial.println();
+    Serial.println("💡 提示: 将上述配置示例中的JSON复制到'{配置JSON}'位置，并替换YOUR_KEY等占位符为实际值");
+}
+
+/**
+ * @brief 生成推送渠道帮助信息
+ * @return String 动态生成的推送渠道帮助信息
+ */
+String TerminalManager::generateChannelHelp() {
+    PushManager& pushManager = PushManager::getInstance();
+    std::vector<PushChannelHelp> helpList = pushManager.getAllChannelHelp();
+    
+    if (helpList.empty()) {
+        return "暂无可用的推送渠道。";
+    }
+    
+    String helpContent = "\n推送渠道详细说明:\n";
+    
+    for (const PushChannelHelp& help : helpList) {
+        helpContent += "\n=== " + help.channelName + " ===\n";
+        helpContent += "描述: " + help.description + "\n";
+        
+        if (!help.configFields.isEmpty()) {
+            helpContent += "配置字段: " + help.configFields + "\n";
+        }
+        
+        if (!help.ruleExample.isEmpty()) {
+            helpContent += "规则示例: " + help.ruleExample + "\n";
+        }
+        
+        if (!help.troubleshooting.isEmpty()) {
+            helpContent += "故障排除: " + help.troubleshooting + "\n";
+        }
+    }
+    
+    return helpContent;
+}
+
+/**
+ * @brief 生成推送渠道配置示例
+ * @return String 动态生成的配置示例
+ */
+String TerminalManager::generateChannelExamples() {
+    PushManager& pushManager = PushManager::getInstance();
+    std::vector<PushChannelExample> examples = pushManager.getAllChannelExamples();
+    
+    if (examples.empty()) {
+        return "暂无可用的推送渠道配置示例。";
+    }
+    
+    String exampleContent = "\n推送渠道配置示例:\n";
+    
+    for (const PushChannelExample& example : examples) {
+        exampleContent += "\n" + example.channelName + "(" + example.description + "):";
+        exampleContent += "\n  配置示例: " + example.configExample;
+        
+        if (!example.usage.isEmpty()) {
+            exampleContent += "\n  使用说明: " + example.usage;
+        }
+        
+        if (!example.helpText.isEmpty()) {
+            exampleContent += "\n  帮助信息: " + example.helpText;
+        }
+        
+        exampleContent += "\n";
+    }
+    
+    return exampleContent;
 }
 
 // ==================== 错误处理 ====================

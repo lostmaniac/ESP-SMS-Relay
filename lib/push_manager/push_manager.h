@@ -19,30 +19,19 @@
 #include <map>
 #include "../database_manager/database_manager.h"
 #include "../http_client/http_client.h"
+#include "push_channel_registry.h"
 
 /**
- * @enum PushResult
- * @brief 推送结果枚举
+ * @brief 加载统计信息结构
  */
-enum PushResult {
-    PUSH_SUCCESS = 0,      ///< 推送成功
-    PUSH_FAILED = 1,       ///< 推送失败
-    PUSH_NO_RULE = 2,      ///< 没有匹配的规则
-    PUSH_RULE_DISABLED = 3, ///< 规则已禁用
-    PUSH_CONFIG_ERROR = 4,  ///< 配置错误
-    PUSH_NETWORK_ERROR = 5  ///< 网络错误
+struct LoadStatistics {
+    int totalChannels;   ///< 总渠道数
+    int loadedChannels;  ///< 已加载渠道数
+    int failedChannels;  ///< 加载失败渠道数
 };
 
-/**
- * @struct PushContext
- * @brief 推送上下文结构体
- */
-struct PushContext {
-    String sender;         ///< 发送方号码
-    String content;        ///< 短信内容
-    String timestamp;      ///< 接收时间戳
-    int smsRecordId;       ///< 短信记录ID
-};
+// 使用push_channel_base.h中定义的PushResult和PushContext
+// 这里不再重复定义，避免冲突
 
 /**
  * @struct PushTemplate
@@ -92,11 +81,64 @@ public:
 
     /**
      * @brief 测试推送配置
+     * @param pushType 推送类型
+     * @param config 推送配置
+     * @param testMessage 测试消息
+     * @return PushResult 推送结果
+     */
+    PushResult testPushConfig(const String& pushType, const String& config, const String& testMessage = "测试消息");
+
+    /**
+     * @brief 根据规则ID测试推送配置
      * @param ruleId 转发规则ID
      * @param testMessage 测试消息
      * @return PushResult 推送结果
      */
     PushResult testPushConfig(int ruleId, const String& testMessage = "测试消息");
+
+    /**
+     * @brief 获取所有可用的推送渠道
+     * @return std::vector<String> 渠道名称列表
+     */
+    std::vector<String> getAvailableChannels() const;
+
+    /**
+     * @brief 获取所有推送渠道的配置示例
+     * @return std::vector<PushChannelExample> 配置示例列表
+     */
+    std::vector<PushChannelExample> getAllChannelExamples() const;
+
+    /**
+     * @brief 获取所有推送渠道的帮助信息
+     * @return std::vector<PushChannelHelp> 帮助信息列表
+     */
+    std::vector<PushChannelHelp> getAllChannelHelp() const;
+
+    /**
+     * @brief 获取CLI演示代码
+     * @return String 完整的CLI演示代码
+     */
+    String getCliDemo() const;
+
+    /**
+     * @brief 重新加载推送渠道
+     * @return true 重新加载成功
+     * @return false 重新加载失败
+     */
+    bool reloadChannels();
+
+    /**
+     * @brief 获取渠道加载统计信息
+     * @return LoadStatistics 加载统计信息
+     */
+    LoadStatistics getLoadStatistics() const;
+
+    /**
+     * @brief 获取渠道元数据
+     * @param channelName 渠道名称
+     * @return PushChannelRegistry::ChannelMetadata 渠道元数据
+     */
+    PushChannelRegistry::ChannelMetadata getChannelMetadata(const String& channelName) const;
 
     /**
      * @brief 获取最后的错误信息
@@ -165,44 +207,15 @@ private:
     PushResult executePush(const ForwardRule& rule, const PushContext& context);
 
     /**
-     * @brief 推送到企业微信
+     * @brief 使用指定渠道执行推送
+     * @param channelName 渠道名称
      * @param config 推送配置（JSON格式）
      * @param context 推送上下文
      * @return PushResult 推送结果
      */
-    PushResult pushToWechat(const String& config, const PushContext& context);
+    PushResult pushToChannel(const String& channelName, const String& config, const PushContext& context);
 
-    /**
-     * @brief 推送到钉钉
-     * @param config 推送配置（JSON格式）
-     * @param context 推送上下文
-     * @return PushResult 推送结果
-     */
-    PushResult pushToDingTalk(const String& config, const PushContext& context);
 
-    /**
-     * @brief 推送到Webhook
-     * @param config 推送配置（JSON格式）
-     * @param context 推送上下文
-     * @return PushResult 推送结果
-     */
-    PushResult pushToWebhook(const String& config, const PushContext& context);
-
-    /**
-     * @brief 解析推送配置
-     * @param configJson 配置JSON字符串
-     * @return std::map<String, String> 配置映射
-     */
-    std::map<String, String> parseConfig(const String& configJson);
-
-    /**
-     * @brief 应用消息模板
-     * @param templateStr 模板字符串
-     * @param context 推送上下文
-     * @param escapeForJson 是否为JSON格式转义特殊字符
-     * @return String 应用模板后的消息
-     */
-    String applyTemplate(const String& templateStr, const PushContext& context, bool escapeForJson = false);
 
     /**
      * @brief 格式化时间戳

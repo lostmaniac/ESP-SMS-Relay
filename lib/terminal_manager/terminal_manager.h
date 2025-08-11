@@ -351,6 +351,29 @@ private:
      */
     void printRules(const std::vector<ForwardRule>& rules);
     
+    /**
+     * @brief 显示可用的推送渠道
+     */
+    void showAvailableChannels();
+    
+    /**
+     * @brief 显示特定渠道的详细配置帮助
+     * @param channelName 渠道名称
+     */
+    void showChannelConfigHelp(const String& channelName);
+    
+    /**
+     * @brief 生成推送渠道帮助信息
+     * @return String 动态生成的推送渠道帮助信息
+     */
+    String generateChannelHelp();
+    
+    /**
+     * @brief 生成推送渠道配置示例
+     * @return String 动态生成的配置示例
+     */
+    String generateChannelExamples();
+    
     // ==================== 私有成员变量 ====================
     
     bool initialized;                    ///< 初始化状态

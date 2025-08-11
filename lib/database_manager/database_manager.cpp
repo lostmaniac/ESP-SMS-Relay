@@ -133,16 +133,18 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
     dbInfo.isOpen = true;
     dbInfo.dbPath = fullDbPath;
     
-    // 只有在数据库文件不存在时才创建表结构和初始化默认数据
+    // 无论数据库文件是否存在，都要确保表结构被正确创建
+    debugPrint("开始创建/验证表结构");
+    if (!createTables()) {
+        setError("创建数据库表失败");
+        close();
+        status = DB_ERROR;
+        return false;
+    }
+    
+    // 只有在数据库文件不存在时才初始化默认数据
     if (!dbExists) {
-        debugPrint("数据库文件不存在，开始创建表结构");
-        if (!createTables()) {
-            setError("创建数据库表失败");
-            close();
-            status = DB_ERROR;
-            return false;
-        }
-        
+        debugPrint("数据库文件不存在，初始化默认数据");
         // 初始化默认数据
         if (!initializeDefaultData()) {
             setError("初始化默认数据失败");
@@ -152,7 +154,7 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
         }
         debugPrint("新数据库初始化完成");
     } else {
-        debugPrint("数据库文件已存在，跳过表结构创建");
+        debugPrint("数据库文件已存在，跳过默认数据初始化");
     }
     
     status = DB_READY;
@@ -459,10 +461,17 @@ int DatabaseManager::addSMSRecord(const SMSRecord& record) {
     
     time_t receivedTime = record.receivedAt != 0 ? record.receivedAt : time(nullptr);
     
+    // 转义字符串防止SQL注入和特殊字符问题
+    String escapedFromNumber = escapeString(record.fromNumber);
+    String escapedToNumber = escapeString(record.toNumber);
+    String escapedContent = escapeString(record.content);
+    String escapedStatus = escapeString(record.status);
+    String escapedForwardedAt = escapeString(record.forwardedAt);
+    
     String sql = "INSERT INTO sms_records (from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at) VALUES ('" +
-                 record.fromNumber + "', '" + record.toNumber + "', '" + record.content + "', " + 
-                 String(record.ruleId) + ", " + String(record.forwarded ? 1 : 0) + ", '" + record.status + "', '" + 
-                 record.forwardedAt + "', " + String(receivedTime) + ")";
+                 escapedFromNumber + "', '" + escapedToNumber + "', '" + escapedContent + "', " + 
+                 String(record.ruleId) + ", " + String(record.forwarded ? 1 : 0) + ", '" + escapedStatus + "', '" + 
+                 escapedForwardedAt + "', " + String(receivedTime) + ")";
     
     if (executeSQL(sql)) {
         return sqlite3_last_insert_rowid(db);
@@ -482,10 +491,17 @@ bool DatabaseManager::updateSMSRecord(const SMSRecord& record) {
         return false;
     }
     
-    String sql = "UPDATE sms_records SET from_number='" + record.fromNumber + "', to_number='" + record.toNumber + 
-                 "', content='" + record.content + "', rule_id=" + String(record.ruleId) + 
-                 ", forwarded=" + String(record.forwarded ? 1 : 0) + ", status='" + record.status + 
-                 "', forwarded_at='" + record.forwardedAt + "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
+    // 转义字符串防止SQL注入和特殊字符问题
+    String escapedFromNumber = escapeString(record.fromNumber);
+    String escapedToNumber = escapeString(record.toNumber);
+    String escapedContent = escapeString(record.content);
+    String escapedStatus = escapeString(record.status);
+    String escapedForwardedAt = escapeString(record.forwardedAt);
+    
+    String sql = "UPDATE sms_records SET from_number='" + escapedFromNumber + "', to_number='" + escapedToNumber + 
+                 "', content='" + escapedContent + "', rule_id=" + String(record.ruleId) + 
+                 ", forwarded=" + String(record.forwarded ? 1 : 0) + ", status='" + escapedStatus + 
+                 "', forwarded_at='" + escapedForwardedAt + "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
     
     return executeSQL(sql);
 }

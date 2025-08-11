@@ -7,7 +7,13 @@
 
 #include "push_manager.h"
 #include "../log_manager/log_manager.h"
+#include "../database_manager/database_manager.h"
 #include <ArduinoJson.h>
+
+// 包含所有推送渠道实现以触发自动注册
+#include "channels/wechat_channel.cpp"
+#include "channels/dingtalk_channel.cpp"
+#include "channels/webhook_channel.cpp"
 
 // 单例实例
 PushManager& PushManager::getInstance() {
@@ -34,28 +40,51 @@ PushManager::~PushManager() {
  * @return false 初始化失败
  */
 bool PushManager::initialize() {
-    debugPrint("正在初始化推送管理器...");
-    
-    // 检查数据库管理器是否就绪
-    DatabaseManager& dbManager = DatabaseManager::getInstance();
-    if (!dbManager.isReady()) {
-        setError("数据库管理器未就绪");
-        return false;
+    if (initialized) {
+        return true;
     }
     
-    // 检查HTTP客户端是否可用
-    HttpClient& httpClient = HttpClient::getInstance();
-    if (!httpClient.initialize()) {
-        setError("HTTP客户端初始化失败: " + httpClient.getLastError());
-        return false;
+    // 首先启用推送管理器的调试模式
+    debugMode = true;
+    
+    debugPrint("初始化推送管理器...");
+    
+    // 启用渠道注册器的调试模式
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    registry.setDebugMode(true);
+    
+    // 渠道通过REGISTER_PUSH_CHANNEL宏自动注册，无需手动注册
+    debugPrint("检查自动注册的推送渠道...");
+    
+    // 检查渠道注册状态
+    size_t channelCount = registry.getChannelCount();
+    debugPrint("当前已注册渠道数量: " + String(channelCount));
+    
+    std::vector<String> availableChannels = registry.getAvailableChannels();
+    debugPrint("可用渠道列表:");
+    for (const String& channel : availableChannels) {
+        debugPrint("  - " + channel);
     }
     
-    // 加载转发规则
-    cachedRules = dbManager.getAllForwardRules();
-    lastRuleUpdate = millis();
+    if (channelCount == 0) {
+        debugPrint("警告: 没有注册任何推送渠道！");
+    }
     
     initialized = true;
-    debugPrint("推送管理器初始化成功，加载了 " + String(cachedRules.size()) + " 条转发规则");
+    debugPrint("推送管理器初始化成功");
+    
+    // 测试数据库查询功能 - 主动触发一次规则缓存更新
+    debugPrint("=== 测试数据库查询功能 ===");
+    PushContext testContext;
+    testContext.sender = "测试发送方";
+    testContext.content = "测试内容";
+    testContext.timestamp = "240101120000";
+    testContext.smsRecordId = -1;
+    
+    // 这将触发matchForwardRules方法，从而执行数据库查询
+    std::vector<ForwardRule> testRules = matchForwardRules(testContext);
+    debugPrint("测试查询完成，获取到 " + String(testRules.size()) + " 条匹配规则");
+    debugPrint("=== 数据库查询测试结束 ===");
     
     return true;
 }
@@ -130,6 +159,28 @@ PushResult PushManager::pushByRule(int ruleId, const PushContext& context) {
 
 /**
  * @brief 测试推送配置
+ * @param pushType 推送类型
+ * @param config 推送配置
+ * @param testMessage 测试消息
+ * @return PushResult 推送结果
+ */
+PushResult PushManager::testPushConfig(const String& pushType, const String& config, const String& testMessage) {
+    if (!initialized) {
+        setError("推送管理器未初始化");
+        return PUSH_FAILED;
+    }
+    
+    PushContext testContext;
+    testContext.sender = "测试号码";
+    testContext.content = testMessage;
+    testContext.timestamp = "240101120000"; // 2024-01-01 12:00:00
+    testContext.smsRecordId = -1;
+    
+    return pushToChannel(pushType, config, testContext);
+}
+
+/**
+ * @brief 根据规则ID测试推送配置
  * @param ruleId 转发规则ID
  * @param testMessage 测试消息
  * @return PushResult 推送结果
@@ -152,17 +203,65 @@ PushResult PushManager::testPushConfig(int ruleId, const String& testMessage) {
 std::vector<ForwardRule> PushManager::matchForwardRules(const PushContext& context) {
     std::vector<ForwardRule> matchedRules;
     
-    // 检查是否需要更新规则缓存
-    if (millis() - lastRuleUpdate > RULE_CACHE_TIMEOUT) {
+    // 检查是否需要更新规则缓存（首次调用或超时）
+    if (lastRuleUpdate == 0 || millis() - lastRuleUpdate > RULE_CACHE_TIMEOUT) {
+        debugPrint("规则缓存超时，开始更新缓存...");
+        debugPrint("当前时间: " + String(millis()) + ", 上次更新: " + String(lastRuleUpdate));
+        debugPrint("缓存超时时间: " + String(RULE_CACHE_TIMEOUT) + "ms");
+        
         DatabaseManager& dbManager = DatabaseManager::getInstance();
-        cachedRules = dbManager.getAllForwardRules();
-        lastRuleUpdate = millis();
-        debugPrint("更新转发规则缓存，共 " + String(cachedRules.size()) + " 条规则");
+        debugPrint("数据库管理器状态: " + String(dbManager.isReady() ? "就绪" : "未就绪"));
+        
+        if (!dbManager.isReady()) {
+            debugPrint("数据库未就绪，无法更新规则缓存");
+            debugPrint("数据库错误: " + dbManager.getLastError());
+        } else {
+            debugPrint("开始查询所有转发规则...");
+            
+            // 先获取查询结果
+            std::vector<ForwardRule> queryResult = dbManager.getAllForwardRules();
+            debugPrint("数据库查询返回 " + String(queryResult.size()) + " 条规则");
+            
+            // 清空当前缓存
+            cachedRules.clear();
+            debugPrint("已清空缓存，当前缓存大小: " + String(cachedRules.size()));
+            
+            // 逐个添加规则到缓存
+            for (const auto& rule : queryResult) {
+                cachedRules.push_back(rule);
+                debugPrint("添加规则到缓存: [" + String(rule.id) + "] " + rule.ruleName);
+            }
+            
+            lastRuleUpdate = millis();
+            debugPrint("缓存更新完成，最终缓存大小: " + String(cachedRules.size()));
+            
+            if (cachedRules.empty()) {
+                debugPrint("警告: 缓存仍然为空！");
+                debugPrint("数据库最后错误: " + dbManager.getLastError());
+                
+                // 再次尝试查询
+                debugPrint("尝试再次查询数据库...");
+                std::vector<ForwardRule> retryResult = dbManager.getAllForwardRules();
+                debugPrint("重试查询返回 " + String(retryResult.size()) + " 条规则");
+            } else {
+                debugPrint("缓存规则列表:");
+                for (size_t i = 0; i < cachedRules.size(); i++) {
+                    const auto& rule = cachedRules[i];
+                    debugPrint("  [" + String(rule.id) + "] " + rule.ruleName + " (启用: " + String(rule.enabled ? "是" : "否") + ")");
+                }
+            }
+        }
     }
     
+    debugPrint("开始匹配规则，缓存中共有 " + String(cachedRules.size()) + " 条规则");
+    debugPrint("短信发送方: " + context.sender);
+    
     for (const auto& rule : cachedRules) {
+        debugPrint("检查规则 [" + String(rule.id) + "] " + rule.ruleName + ", 启用状态: " + String(rule.enabled ? "是" : "否"));
+        
         // 跳过禁用的规则
         if (!rule.enabled) {
+            debugPrint("跳过禁用的规则: " + rule.ruleName);
             continue;
         }
         
@@ -170,25 +269,35 @@ std::vector<ForwardRule> PushManager::matchForwardRules(const PushContext& conte
         
         // 检查是否为默认转发规则
         if (rule.isDefaultForward) {
+            debugPrint("规则 " + rule.ruleName + " 是默认转发规则，直接匹配");
             matched = true;
         } else {
+            debugPrint("检查规则 " + rule.ruleName + " 的匹配条件:");
+            debugPrint("  来源号码模式: " + rule.sourceNumber);
+            debugPrint("  关键词: " + rule.keywords);
+            
             // 检查号码匹配
             bool numberMatch = rule.sourceNumber.isEmpty() || 
                               matchPhoneNumber(rule.sourceNumber, context.sender);
+            debugPrint("  号码匹配结果: " + String(numberMatch ? "是" : "否"));
             
             // 检查关键词匹配
             bool keywordMatch = rule.keywords.isEmpty() || 
                                matchKeywords(rule.keywords, context.content);
+            debugPrint("  关键词匹配结果: " + String(keywordMatch ? "是" : "否"));
             
             matched = numberMatch && keywordMatch;
         }
         
         if (matched) {
             matchedRules.push_back(rule);
-            debugPrint("规则匹配: " + rule.ruleName);
+            debugPrint("✓ 规则匹配成功: " + rule.ruleName);
+        } else {
+            debugPrint("✗ 规则不匹配: " + rule.ruleName);
         }
     }
     
+    debugPrint("规则匹配完成，共匹配到 " + String(matchedRules.size()) + " 条规则");
     return matchedRules;
 }
 
@@ -281,18 +390,7 @@ bool PushManager::matchKeywords(const String& keywords, const String& content) {
 PushResult PushManager::executePush(const ForwardRule& rule, const PushContext& context) {
     debugPrint("执行推送，类型: " + rule.pushType);
     
-    PushResult result = PUSH_FAILED;
-    
-    if (rule.pushType == "wechat" || rule.pushType == "企业微信") {
-        result = pushToWechat(rule.pushConfig, context);
-    } else if (rule.pushType == "dingtalk" || rule.pushType == "钉钉") {
-        result = pushToDingTalk(rule.pushConfig, context);
-    } else if (rule.pushType == "webhook") {
-        result = pushToWebhook(rule.pushConfig, context);
-    } else {
-        setError("不支持的推送类型: " + rule.pushType);
-        result = PUSH_CONFIG_ERROR;
-    }
+    PushResult result = pushToChannel(rule.pushType, rule.pushConfig, context);
     
     // 更新短信记录的转发状态
     if (context.smsRecordId > 0) {
@@ -313,267 +411,254 @@ PushResult PushManager::executePush(const ForwardRule& rule, const PushContext& 
 }
 
 /**
- * @brief 推送到企业微信
+ * @brief 使用指定渠道执行推送
+ * @param channelName 渠道名称
  * @param config 推送配置（JSON格式）
  * @param context 推送上下文
  * @return PushResult 推送结果
  */
-PushResult PushManager::pushToWechat(const String& config, const PushContext& context) {
-    std::map<String, String> configMap = parseConfig(config);
-    
-    String webhookUrl = configMap["webhook_url"];
-    if (webhookUrl.isEmpty()) {
-        setError("企业微信配置缺少webhook_url");
-        return PUSH_CONFIG_ERROR;
+PushResult PushManager::pushToChannel(const String& channelName, const String& config, const PushContext& context) {
+    if (!initialized) {
+        setError("推送管理器未初始化");
+        return PUSH_FAILED;
     }
     
-    // 获取消息模板
-    String messageTemplate = configMap["template"];
-    if (messageTemplate.isEmpty()) {
-        // 使用默认模板
-        messageTemplate = "📱 收到新短信\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n📄 内容: {content}";
+    debugPrint("使用渠道推送: " + channelName);
+    debugPrint("推送配置: " + config);
+    debugPrint("推送内容: " + context.content);
+    
+    // 通过推送渠道注册器获取具体的推送渠道实例
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    auto channel = registry.createChannel(channelName);
+    
+    if (!channel) {
+        setError("未找到推送渠道: " + channelName);
+        debugPrint("❌ 推送失败: 未找到渠道 " + channelName);
+        return PUSH_FAILED;
     }
     
-    String message = applyTemplate(messageTemplate, context);
+    debugPrint("✅ 成功创建推送渠道实例: " + channelName);
     
-    // 构建企业微信消息体
-    JsonDocument doc;
-    doc["msgtype"] = "text";
-    doc["text"]["content"] = message;
+    // 设置调试模式
+    if (debugMode) {
+        channel->setDebugMode(true);
+    }
     
-    String messageBody;
-    serializeJson(doc, messageBody);
+    // 执行推送
+    PushResult result = channel->push(config, context);
     
-    // 设置请求头
-    std::map<String, String> headers;
-    headers["Content-Type"] = "application/json";
-    
-    debugPrint("推送到企业微信: " + webhookUrl);
-    debugPrint("消息内容: " + messageBody);
-    
-    // 发送HTTP请求
-    HttpClient& httpClient = HttpClient::getInstance();
-    HttpResponse response = httpClient.post(webhookUrl, messageBody, headers, 30000);
-    
-    debugPrint("企业微信响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
-    debugPrint("响应内容: " + response.body);
-    
-    if (response.statusCode == 200) {
-        debugPrint("✅ 企业微信推送成功");
-        return PUSH_SUCCESS;
+    if (result == PUSH_SUCCESS) {
+        debugPrint("✅ 推送成功完成");
     } else {
-        setError("企业微信推送失败，状态码: " + String(response.statusCode) + ", 错误: " + httpClient.getLastError());
-        return (response.error == 0) ? PUSH_FAILED : PUSH_NETWORK_ERROR;
-    }
-}
-
-/**
- * @brief 推送到钉钉
- * @param config 推送配置（JSON格式）
- * @param context 推送上下文
- * @return PushResult 推送结果
- */
-PushResult PushManager::pushToDingTalk(const String& config, const PushContext& context) {
-    std::map<String, String> configMap = parseConfig(config);
-    
-    String webhookUrl = configMap["webhook_url"];
-    if (webhookUrl.isEmpty()) {
-        setError("钉钉配置缺少webhook_url");
-        return PUSH_CONFIG_ERROR;
-    }
-    
-    // 获取消息模板
-    String messageTemplate = configMap["template"];
-    if (messageTemplate.isEmpty()) {
-        // 使用默认模板
-        messageTemplate = "📱 收到新短信\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n📄 内容: {content}";
-    }
-    
-    String message = applyTemplate(messageTemplate, context);
-    
-    // 构建钉钉消息体
-    JsonDocument doc;
-    doc["msgtype"] = "text";
-    doc["text"]["content"] = message;
-    
-    String messageBody;
-    serializeJson(doc, messageBody);
-    
-    // 设置请求头
-    std::map<String, String> headers;
-    headers["Content-Type"] = "application/json";
-    
-    debugPrint("推送到钉钉: " + webhookUrl);
-    debugPrint("消息内容: " + messageBody);
-    
-    // 发送HTTP请求
-    HttpClient& httpClient = HttpClient::getInstance();
-    HttpResponse response = httpClient.post(webhookUrl, messageBody, headers, 30000);
-    
-    debugPrint("钉钉响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
-    debugPrint("响应内容: " + response.body);
-    
-    if (response.statusCode == 200) {
-        debugPrint("✅ 钉钉推送成功");
-        return PUSH_SUCCESS;
-    } else {
-        setError("钉钉推送失败，状态码: " + String(response.statusCode) + ", 错误: " + httpClient.getLastError());
-        return (response.error == 0) ? PUSH_FAILED : PUSH_NETWORK_ERROR;
-    }
-}
-
-/**
- * @brief 推送到Webhook
- * @param config 推送配置（JSON格式）
- * @param context 推送上下文
- * @return PushResult 推送结果
- */
-PushResult PushManager::pushToWebhook(const String& config, const PushContext& context) {
-    std::map<String, String> configMap = parseConfig(config);
-    
-    String webhookUrl = configMap["webhook_url"];
-    if (webhookUrl.isEmpty()) {
-        setError("Webhook配置缺少webhook_url");
-        return PUSH_CONFIG_ERROR;
-    }
-    
-    String method = configMap["method"];
-    if (method.isEmpty()) {
-        method = "POST";
-    }
-    
-    String contentType = configMap["content_type"];
-    if (contentType.isEmpty()) {
-        contentType = "application/json";
-    }
-    
-    // 获取消息模板
-    String bodyTemplate = configMap["body_template"];
-    if (bodyTemplate.isEmpty()) {
-        // 使用默认JSON模板
-        bodyTemplate = "{\"sender\":\"{sender}\",\"content\":\"{content}\",\"timestamp\":\"{timestamp}\"}";
-    }
-    
-    String messageBody = applyTemplate(bodyTemplate, context, true); // Webhook需要JSON转义
-    
-    // 设置请求头
-    std::map<String, String> headers;
-    headers["Content-Type"] = contentType;
-    
-    // 添加自定义头部
-    String customHeaders = configMap["headers"];
-    if (!customHeaders.isEmpty()) {
-        // 解析自定义头部（简单实现）
-        // 格式: "Header1:Value1,Header2:Value2"
-        int startIndex = 0;
-        int commaIndex = customHeaders.indexOf(',');
-        
-        while (commaIndex != -1 || startIndex < customHeaders.length()) {
-            String headerPair;
-            if (commaIndex != -1) {
-                headerPair = customHeaders.substring(startIndex, commaIndex);
-                startIndex = commaIndex + 1;
-                commaIndex = customHeaders.indexOf(',', startIndex);
-            } else {
-                headerPair = customHeaders.substring(startIndex);
-                startIndex = customHeaders.length();
-            }
-            
-            int colonIndex = headerPair.indexOf(':');
-            if (colonIndex != -1) {
-                String headerName = headerPair.substring(0, colonIndex);
-                String headerValue = headerPair.substring(colonIndex + 1);
-                headerName.trim();
-                headerValue.trim();
-                headers[headerName] = headerValue;
-            }
-        }
-    }
-    
-    debugPrint("推送到Webhook: " + webhookUrl);
-    debugPrint("方法: " + method + ", 内容类型: " + contentType);
-    debugPrint("消息内容: " + messageBody);
-    
-    // 发送HTTP请求
-    HttpClient& httpClient = HttpClient::getInstance();
-    HttpResponse response;
-    
-    if (method.equalsIgnoreCase("POST")) {
-        response = httpClient.post(webhookUrl, messageBody, headers, 30000);
-    } else if (method.equalsIgnoreCase("GET")) {
-        response = httpClient.get(webhookUrl, headers, 30000);
-    } else {
-        setError("不支持的HTTP方法: " + method + "，仅支持POST和GET");
-        return PUSH_CONFIG_ERROR;
-    }
-    
-    debugPrint("Webhook响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
-    debugPrint("响应内容: " + response.body);
-    
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint("✅ Webhook推送成功");
-        return PUSH_SUCCESS;
-    } else {
-        setError("Webhook推送失败，状态码: " + String(response.statusCode) + ", 错误: " + httpClient.getLastError());
-        return (response.error == 0) ? PUSH_FAILED : PUSH_NETWORK_ERROR;
-    }
-}
-
-/**
- * @brief 解析推送配置
- * @param configJson 配置JSON字符串
- * @return std::map<String, String> 配置映射
- */
-std::map<String, String> PushManager::parseConfig(const String& configJson) {
-    std::map<String, String> configMap;
-    
-    if (configJson.isEmpty()) {
-        return configMap;
-    }
-    
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, configJson);
-    
-    if (error) {
-        debugPrint("解析配置JSON失败: " + String(error.c_str()));
-        return configMap;
-    }
-    
-    // 遍历JSON对象
-    for (JsonPair kv : doc.as<JsonObject>()) {
-        configMap[kv.key().c_str()] = kv.value().as<String>();
-    }
-    
-    return configMap;
-}
-
-/**
- * @brief 应用消息模板
- * @param templateStr 模板字符串
- * @param context 推送上下文
- * @param escapeForJson 是否为JSON格式转义特殊字符
- * @return String 应用模板后的消息
- */
-String PushManager::applyTemplate(const String& templateStr, const PushContext& context, bool escapeForJson) {
-    String result = templateStr;
-    
-    // 替换占位符
-    result.replace("{sender}", context.sender);
-    result.replace("{content}", context.content);
-    result.replace("{timestamp}", formatTimestamp(context.timestamp));
-    result.replace("{sms_id}", String(context.smsRecordId));
-    
-    // 只有在需要JSON转义时才转义特殊字符
-    if (escapeForJson) {
-        result.replace("\\", "\\\\");
-        result.replace("\"", "\\\"");
-        result.replace("\n", "\\n");
-        result.replace("\r", "\\r");
-        result.replace("\t", "\\t");
+        String channelError = channel->getLastError();
+        setError("推送失败: " + channelError);
+        debugPrint("❌ 推送失败: " + channelError);
     }
     
     return result;
 }
+
+/**
+ * @brief 获取所有可用的推送渠道
+ * @return std::vector<String> 渠道名称列表
+ */
+std::vector<String> PushManager::getAvailableChannels() const {
+    if (!initialized) {
+        return std::vector<String>();
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    return registry.getAvailableChannels();
+}
+
+/**
+ * @brief 获取所有推送渠道的配置示例
+ * @return std::vector<PushChannelExample> 配置示例列表
+ */
+std::vector<PushChannelExample> PushManager::getAllChannelExamples() const {
+    if (!initialized) {
+        return std::vector<PushChannelExample>();
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    std::vector<String> channels = registry.getAvailableChannels();
+    std::vector<PushChannelExample> examples;
+    
+    for (const String& channelName : channels) {
+        const PushChannelRegistry::ChannelMetadata* metadata = registry.getChannelMetadata(channelName);
+        auto channel = registry.createChannel(channelName);
+        if (channel && metadata) {
+            PushChannelExample example = channel->getConfigExample();
+            example.channelName = channelName;
+            example.description = metadata->description;
+            examples.push_back(example);
+        }
+    }
+    
+    return examples;
+}
+
+/**
+ * @brief 获取所有推送渠道的帮助信息
+ * @return std::vector<PushChannelHelp> 帮助信息列表
+ */
+std::vector<PushChannelHelp> PushManager::getAllChannelHelp() const {
+    if (!initialized) {
+        return std::vector<PushChannelHelp>();
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    std::vector<String> channels = registry.getAvailableChannels();
+    std::vector<PushChannelHelp> helpList;
+    
+    for (const String& channelName : channels) {
+        const PushChannelRegistry::ChannelMetadata* metadata = registry.getChannelMetadata(channelName);
+        auto channel = registry.createChannel(channelName);
+        if (channel && metadata) {
+            PushChannelHelp help = channel->getHelp();
+            help.channelName = channelName;
+            help.description = metadata->description;
+            helpList.push_back(help);
+        }
+    }
+    
+    return helpList;
+}
+
+/**
+ * @brief 获取CLI演示代码
+ * @return String 完整的CLI演示代码
+ */
+String PushManager::getCliDemo() const {
+    if (!initialized) {
+        return "推送管理器未初始化";
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    String registryDemo = "// 推送渠道注册器演示\n// 直接使用注册器管理渠道\n";
+    
+    String managerDemo = "\n// 推送管理器演示\n";
+    managerDemo += "void demoPushManager() {\n";
+    managerDemo += "    PushManager& manager = PushManager::getInstance();\n";
+    managerDemo += "    manager.setDebugMode(true);\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 初始化推送管理器\n";
+    managerDemo += "    if (!manager.initialize()) {\n";
+    managerDemo += "        Serial.println(\"❌ 推送管理器初始化失败: \" + manager.getLastError());\n";
+    managerDemo += "        return;\n";
+    managerDemo += "    }\n";
+    managerDemo += "    \n";
+    managerDemo += "    Serial.println(\"✅ 推送管理器初始化成功\");\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 获取加载统计信息\n";
+    managerDemo += "    LoadStatistics stats = manager.getLoadStatistics();\n";
+    managerDemo += "    Serial.println(\"\\n渠道加载统计:\");\n";
+    managerDemo += "    Serial.println(\"- 总计: \" + String(stats.totalChannels));\n";
+    managerDemo += "    Serial.println(\"- 成功: \" + String(stats.loadedChannels));\n";
+    managerDemo += "    Serial.println(\"- 失败: \" + String(stats.failedChannels));\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 获取可用渠道\n";
+    managerDemo += "    std::vector<String> channels = manager.getAvailableChannels();\n";
+    managerDemo += "    Serial.println(\"\\n可用的推送渠道:\");\n";
+    managerDemo += "    for (const String& channel : channels) {\n";
+    managerDemo += "        PushChannelRegistry::ChannelMetadata metadata = manager.getChannelMetadata(channel);\n";
+    managerDemo += "        Serial.println(\"- \" + channel + \" (\" + metadata.description + \")\");\n";
+    managerDemo += "    }\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 获取配置示例\n";
+    managerDemo += "    std::vector<PushChannelExample> examples = manager.getAllChannelExamples();\n";
+    managerDemo += "    Serial.println(\"\\n配置示例:\");\n";
+    managerDemo += "    for (const PushChannelExample& example : examples) {\n";
+    managerDemo += "        Serial.println(\"\\n=== \" + example.channelName + \" ===\");\n";
+    managerDemo += "        Serial.println(\"描述: \" + example.description);\n";
+    managerDemo += "        Serial.println(\"配置示例:\");\n";
+    managerDemo += "        Serial.println(example.configExample);\n";
+    managerDemo += "    }\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 测试推送\n";
+    managerDemo += "    String testConfig = \"{\\\"webhook_url\\\":\\\"https://example.com/webhook\\\",\\\"template\\\":\\\"测试消息: {content}\\\"}\";\n";
+    managerDemo += "    PushResult result = manager.testPushConfig(\"webhook\", testConfig, \"这是一条测试消息\");\n";
+    managerDemo += "    \n";
+    managerDemo += "    if (result == PUSH_SUCCESS) {\n";
+    managerDemo += "        Serial.println(\"\\n✅ 测试推送成功\");\n";
+    managerDemo += "    } else {\n";
+    managerDemo += "        Serial.println(\"\\n❌ 测试推送失败: \" + manager.getLastError());\n";
+    managerDemo += "    }\n";
+    managerDemo += "    \n";
+    managerDemo += "    // 测试重新加载渠道\n";
+    managerDemo += "    Serial.println(\"\\n测试重新加载渠道...\");\n";
+    managerDemo += "    if (manager.reloadChannels()) {\n";
+    managerDemo += "        Serial.println(\"✅ 渠道重新加载成功\");\n";
+    managerDemo += "        LoadStatistics newStats = manager.getLoadStatistics();\n";
+    managerDemo += "        Serial.println(\"新的加载统计: 总计=\" + String(newStats.totalChannels) +\n";
+    managerDemo += "                       \", 成功=\" + String(newStats.loadedChannels) +\n";
+    managerDemo += "                       \", 失败=\" + String(newStats.failedChannels));\n";
+    managerDemo += "    } else {\n";
+    managerDemo += "        Serial.println(\"❌ 渠道重新加载失败: \" + manager.getLastError());\n";
+    managerDemo += "    }\n";
+    managerDemo += "}\n";
+    
+    return registryDemo + managerDemo;
+}
+
+/**
+ * @brief 重新加载推送渠道
+ * @return true 重新加载成功
+ * @return false 重新加载失败
+ */
+bool PushManager::reloadChannels() {
+    if (!initialized) {
+        setError("推送管理器未初始化");
+        return false;
+    }
+    
+    debugPrint("重新加载推送渠道...");
+    
+    // 注册表模式下，渠道是静态注册的，无需重新加载
+    // 这里可以添加清理缓存等操作
+    
+    debugPrint("渠道重新加载完成");
+    
+    return true;
+}
+
+/**
+ * @brief 获取渠道加载统计信息
+ * @return LoadStatistics 加载统计信息
+ */
+LoadStatistics PushManager::getLoadStatistics() const {
+    if (!initialized) {
+        return LoadStatistics{0, 0, 0};
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    std::vector<String> channels = registry.getAvailableChannels();
+    
+    return LoadStatistics{(int)channels.size(), (int)channels.size(), 0};
+}
+
+/**
+ * @brief 获取渠道元数据
+ * @param channelName 渠道名称
+ * @return PushChannelRegistry::ChannelMetadata 渠道元数据
+ */
+PushChannelRegistry::ChannelMetadata PushManager::getChannelMetadata(const String& channelName) const {
+    if (!initialized) {
+        return PushChannelRegistry::ChannelMetadata{"", "", "", "", std::vector<String>(), nullptr};
+    }
+    
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    const PushChannelRegistry::ChannelMetadata* metadata = registry.getChannelMetadata(channelName);
+    if (metadata) {
+        return *metadata;
+    }
+    
+    return PushChannelRegistry::ChannelMetadata{"", "", "", "", std::vector<String>(), nullptr};
+}
+
+
+
+
 
 /**
  * @brief 格式化时间戳

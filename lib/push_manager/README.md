@@ -1,249 +1,320 @@
-# 推送管理器 (Push Manager)
+# Push Manager 推送管理模块
 
-推送管理器是ESP-SMS-Relay项目的核心转发模块，负责根据配置的转发规则将接收到的短信推送到不同的目标平台。
+## 概述
+
+Push Manager 是 ESP-SMS-Relay 项目的推送管理模块，采用模块化设计，支持多种推送渠道，具有高度的可扩展性和可维护性。
+
+## 架构设计
+
+### 核心组件
+
+```
+push_manager/
+├── push_channel_base.h/cpp      # 推送渠道基类
+├── push_channel_factory.h/cpp   # 推送渠道工厂
+├── push_manager.h/cpp           # 推送管理器
+├── wechat_channel.h/cpp         # 企业微信推送渠道
+├── dingtalk_channel.h/cpp       # 钉钉推送渠道
+├── webhook_channel.h/cpp        # Webhook推送渠道
+├── push_cli_demo.h/cpp          # CLI演示程序
+└── README.md                    # 本文档
+```
+
+### 设计模式
+
+1. **注册表模式**: `PushChannelRegistry` 负责注册和管理推送渠道实例
+2. **单例模式**: 核心管理类采用单例模式确保全局唯一性
+3. **策略模式**: 不同推送渠道实现统一接口，可灵活切换
+4. **模板方法模式**: 基类定义通用流程，子类实现具体细节
 
 ## 功能特性
 
-- 🎯 **智能规则匹配**: 支持号码模式匹配、关键词过滤
-- 🔄 **多平台支持**: 企业微信、钉钉、自定义Webhook
-- 📝 **模板系统**: 支持自定义消息模板
-- 🗄️ **数据库集成**: 与数据库管理器无缝集成
-- 🔧 **配置灵活**: JSON格式配置，支持复杂场景
-- 📊 **状态跟踪**: 完整的推送状态记录
+### 支持的推送渠道
 
-## 快速开始
+- **企业微信 (wechat)**: 支持企业微信群机器人推送
+- **钉钉 (dingtalk)**: 支持钉钉群机器人推送（含签名验证）
+- **Webhook (webhook)**: 支持通用HTTP Webhook推送
 
-### 1. 初始化推送管理器
+### 核心功能
+
+- ✅ 多渠道推送支持
+- ✅ 配置验证和测试
+- ✅ 消息模板系统
+- ✅ 错误处理和重试
+- ✅ 调试模式支持
+- ✅ CLI演示程序
+- ✅ 动态渠道注册
+- ✅ 配置示例生成
+
+## 使用方法
+
+### 基本使用
 
 ```cpp
-#include "push_manager/push_manager.h"
+#include "push_manager.h"
 
-PushManager& pushManager = PushManager::getInstance();
-if (!pushManager.initialize()) {
-    Serial.println("推送管理器初始化失败: " + pushManager.getLastError());
+// 获取推送管理器实例
+PushManager& manager = PushManager::getInstance();
+
+// 初始化
+if (!manager.initialize()) {
+    Serial.println("初始化失败: " + manager.getLastError());
     return;
 }
-```
 
-### 2. 创建转发规则
-
-```cpp
-#include "database_manager/database_manager.h"
-
-DatabaseManager& db = DatabaseManager::getInstance();
-
-// 创建企业微信转发规则
-ForwardRule rule;
-rule.ruleName = "企业微信默认转发";
-rule.sourceNumber = ""; // 空表示匹配所有号码
-rule.keywords = ""; // 空表示匹配所有内容
-rule.pushType = "wechat";
-rule.pushConfig = R"({
-    "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-    "template": "📱 收到新短信\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n📄 内容: {content}"
-})";
-rule.enabled = true;
-rule.isDefaultForward = true;
-
-int ruleId = db.addForwardRule(rule);
-```
-
-### 3. 处理短信转发
-
-```cpp
-// 构建推送上下文
+// 创建推送上下文
 PushContext context;
-context.sender = "10086";
-context.content = "您的话费余额为100元";
+context.sender = "13800138000";
+context.content = "测试短信内容";
 context.timestamp = "241201120000";
-context.smsRecordId = 123;
+context.smsRecordId = 1;
 
-// 执行转发
-PushResult result = pushManager.processSmsForward(context);
+// 执行推送
+PushResult result = manager.processSmsForward(context);
 if (result == PUSH_SUCCESS) {
-    Serial.println("转发成功");
+    Serial.println("推送成功");
+} else {
+    Serial.println("推送失败: " + manager.getLastError());
 }
 ```
 
-## 支持的推送类型
+### 测试推送配置
 
-### 1. 企业微信 (wechat)
+```cpp
+// 测试企业微信配置
+String wechatConfig = R"({
+    "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
+    "message_template": "收到来自 {sender} 的短信：{content}"
+})";
+
+bool result = manager.testPushConfig("wechat", wechatConfig);
+if (result) {
+    Serial.println("配置测试成功");
+} else {
+    Serial.println("配置测试失败: " + manager.getLastError());
+}
+```
+
+### 获取可用渠道
+
+```cpp
+// 获取所有可用渠道
+std::vector<String> channels = manager.getAvailableChannels();
+for (const String& channel : channels) {
+    Serial.println("可用渠道: " + channel);
+}
+
+// 获取所有渠道的配置示例
+String examples = manager.getAllChannelExamples();
+Serial.println(examples);
+```
+
+### CLI演示程序
+
+```cpp
+#include "push_cli_demo.h"
+
+void setup() {
+    Serial.begin(115200);
+    
+    // 运行CLI演示程序
+    PushCliDemo& demo = PushCliDemo::getInstance();
+    demo.run();
+}
+```
+
+## 配置示例
+
+### 企业微信配置
 
 ```json
 {
     "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-    "template": "📱 收到新短信\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n📄 内容: {content}"
+    "message_template": "📱 短信转发通知\n\n发送方: {sender}\n时间: {timestamp}\n内容: {content}\n\n短信ID: {sms_id}"
 }
 ```
 
-### 2. 钉钉 (dingtalk)
+### 钉钉配置
 
 ```json
 {
     "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN",
-    "template": "🚨 重要短信通知\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n📄 内容: {content}"
+    "secret": "YOUR_SECRET",
+    "message_template": "📱 短信转发通知\n\n发送方: {sender}\n时间: {timestamp}\n内容: {content}\n\n短信ID: {sms_id}"
 }
 ```
 
-### 3. 自定义Webhook (webhook)
+### Webhook配置
 
 ```json
 {
-    "webhook_url": "https://your-server.com/api/sms-webhook",
+    "webhook_url": "https://your-server.com/webhook",
     "method": "POST",
-    "content_type": "application/json",
-    "headers": "Authorization:Bearer TOKEN,X-Source:ESP-SMS-Relay",
-    "body_template": "{\"type\":\"sms\",\"from\":\"{sender}\",\"content\":\"{content}\",\"timestamp\":\"{timestamp}\"}"
+    "headers": "Content-Type: application/json\nAuthorization: Bearer YOUR_TOKEN",
+    "message_template": "{\"sender\": \"{sender}\", \"content\": \"{content}\", \"timestamp\": \"{timestamp}\", \"sms_id\": {sms_id}}"
 }
 ```
 
-## 规则匹配说明
+## 扩展新渠道
 
-### 号码匹配模式
-
-- `""` 或 `"*"`: 匹配所有号码
-- `"10086"`: 精确匹配
-- `"100*"`: 前缀匹配（以100开头）
-- `"*86"`: 后缀匹配（以86结尾）
-- `"10*86"`: 包含匹配（以10开头，86结尾）
-- `"10086,95588"`: 多号码匹配（逗号分隔）
-
-### 关键词匹配
-
-- `""`: 匹配所有内容
-- `"重要"`: 包含"重要"关键词
-- `"重要,紧急,警告"`: 包含任一关键词（逗号分隔）
-
-### 默认转发规则
-
-设置 `isDefaultForward = true` 的规则会忽略号码和关键词匹配，对所有短信生效。
-
-## 模板变量
-
-在消息模板中可以使用以下变量：
-
-- `{sender}`: 发送方号码
-- `{content}`: 短信内容
-- `{timestamp}`: 格式化的接收时间
-- `{sms_id}`: 短信记录ID
-
-## 配置示例
-
-### 银行短信专用转发
+### 1. 创建渠道类
 
 ```cpp
-ForwardRule bankRule;
-bankRule.ruleName = "银行短信转发";
-bankRule.sourceNumber = "95588,95533,95599"; // 银行号码
-bankRule.keywords = "";
-bankRule.pushType = "wechat";
-bankRule.pushConfig = R"({
-    "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=BANK_KEY",
-    "template": "🏦 银行短信通知\n\n📞 银行: {sender}\n🕐 时间: {timestamp}\n💰 内容: {content}"
-})";
-bankRule.enabled = true;
-bankRule.isDefaultForward = false;
+// 创建 your_channel.h
+#include "push_channel_base.h"
+
+class YourChannel : public PushChannelBase {
+public:
+    YourChannel();
+    virtual ~YourChannel();
+    
+    String getChannelName() const override;
+    String getDescription() const override;
+    PushResult push(const String& config, const PushContext& context) override;
+    bool testConfig(const String& config) override;
+    String getConfigExample() const override;
+    String getCliDemo() const override;
+    
+private:
+    bool validateConfig(const std::map<String, String>& configMap);
+    String buildMessageBody(const std::map<String, String>& configMap, const PushContext& context);
+};
 ```
 
-### 重要消息钉钉通知
+### 2. 实现渠道功能
 
 ```cpp
-ForwardRule urgentRule;
-urgentRule.ruleName = "紧急消息钉钉通知";
-urgentRule.sourceNumber = "";
-urgentRule.keywords = "重要,紧急,警告,故障";
-urgentRule.pushType = "dingtalk";
-urgentRule.pushConfig = R"({
-    "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=URGENT_TOKEN",
-    "template": "🚨 紧急短信通知\n\n📞 发送方: {sender}\n🕐 时间: {timestamp}\n⚠️ 内容: {content}"
-})";
-urgentRule.enabled = true;
-urgentRule.isDefaultForward = false;
+// 实现 your_channel.cpp
+#include "your_channel.h"
+
+String YourChannel::getChannelName() const {
+    return "your_channel";
+}
+
+PushResult YourChannel::push(const String& config, const PushContext& context) {
+    // 实现推送逻辑
+    return PUSH_SUCCESS;
+}
+
+// ... 其他方法实现
+```
+
+### 3. 注册到工厂
+
+在对应渠道的 `.cpp` 文件中使用注册宏：
+
+```cpp
+#include "your_channel.h"
+
+// 在your_channel.cpp文件末尾添加注册宏
+REGISTER_PUSH_CHANNEL(YourChannel, "your_channel", (std::vector<String>{"your_channel", "your"}));
 ```
 
 ## API 参考
 
-### PushManager 类
+### PushManager 主要接口
 
-#### 主要方法
+| 方法 | 描述 | 返回值 |
+|------|------|--------|
+| `getInstance()` | 获取单例实例 | `PushManager&` |
+| `initialize()` | 初始化推送管理器 | `bool` |
+| `processSmsForward(context)` | 处理短信转发 | `PushResult` |
+| `testPushConfig(type, config)` | 测试推送配置 | `bool` |
+| `getAvailableChannels()` | 获取可用渠道列表 | `std::vector<String>` |
+| `getAllChannelExamples()` | 获取所有渠道配置示例 | `String` |
+| `getLastError()` | 获取最后错误信息 | `String` |
+| `setDebugMode(enabled)` | 设置调试模式 | `void` |
 
-- `getInstance()`: 获取单例实例
-- `initialize()`: 初始化推送管理器
-- `processSmsForward(context)`: 处理短信转发
-- `pushByRule(ruleId, context)`: 按规则ID转发
-- `testPushConfig(ruleId, testMessage)`: 测试推送配置
-
-#### 返回值
+### PushResult 枚举
 
 ```cpp
 enum PushResult {
-    PUSH_SUCCESS = 0,      // 推送成功
-    PUSH_FAILED = 1,       // 推送失败
-    PUSH_NO_RULE = 2,      // 没有匹配的规则
-    PUSH_RULE_DISABLED = 3, // 规则已禁用
-    PUSH_CONFIG_ERROR = 4,  // 配置错误
-    PUSH_NETWORK_ERROR = 5  // 网络错误
+    PUSH_SUCCESS = 0,           // 推送成功
+    PUSH_ERROR_CONFIG = 1,      // 配置错误
+    PUSH_ERROR_NETWORK = 2,     // 网络错误
+    PUSH_ERROR_AUTH = 3,        // 认证错误
+    PUSH_ERROR_RATE_LIMIT = 4,  // 频率限制
+    PUSH_ERROR_UNKNOWN = 5      // 未知错误
 };
 ```
 
-### PushContext 结构体
+### PushContext 结构
 
 ```cpp
 struct PushContext {
-    String sender;         // 发送方号码
-    String content;        // 短信内容
-    String timestamp;      // 接收时间戳
-    int smsRecordId;       // 短信记录ID
+    String sender;          // 发送方号码
+    String content;         // 短信内容
+    String timestamp;       // 时间戳
+    int smsRecordId;        // 短信记录ID
 };
 ```
 
-## 错误处理
+## 调试和故障排除
+
+### 启用调试模式
 
 ```cpp
-PushResult result = pushManager.processSmsForward(context);
-switch (result) {
-    case PUSH_SUCCESS:
-        Serial.println("转发成功");
-        break;
-    case PUSH_NO_RULE:
-        Serial.println("没有匹配的转发规则");
-        break;
-    case PUSH_CONFIG_ERROR:
-        Serial.println("配置错误: " + pushManager.getLastError());
-        break;
-    case PUSH_NETWORK_ERROR:
-        Serial.println("网络错误: " + pushManager.getLastError());
-        break;
-    default:
-        Serial.println("转发失败: " + pushManager.getLastError());
-        break;
-}
+PushManager::getInstance().setDebugMode(true);
+PushChannelRegistry::getInstance().setDebugMode(true);
 ```
 
-## 调试模式
+### 常见问题
 
-```cpp
-pushManager.setDebugMode(true); // 启用详细日志输出
-```
+1. **推送失败**: 检查网络连接和配置参数
+2. **配置错误**: 验证JSON格式和必需参数
+3. **认证失败**: 检查API密钥和签名算法
+4. **频率限制**: 适当延迟推送请求
 
-## 注意事项
+### 错误代码说明
 
-1. **Webhook地址**: 确保webhook地址可访问且支持HTTPS
-2. **网络连接**: 推送需要稳定的网络连接
-3. **配置格式**: JSON配置必须格式正确
-4. **规则优先级**: 多个规则匹配时都会执行
-5. **错误重试**: 目前不支持自动重试，需要应用层处理
+- `PUSH_ERROR_CONFIG`: 配置参数缺失或格式错误
+- `PUSH_ERROR_NETWORK`: 网络连接失败或超时
+- `PUSH_ERROR_AUTH`: API密钥错误或签名验证失败
+- `PUSH_ERROR_RATE_LIMIT`: 超出API调用频率限制
+- `PUSH_ERROR_UNKNOWN`: 其他未知错误
 
-## 完整示例
+## 性能优化
 
-参考 `examples/push_manager_usage.cpp` 文件查看完整的使用示例。
+### 内存管理
 
-## 更新日志
+- 使用智能指针管理渠道实例
+- 及时释放HTTP连接资源
+- 避免大量字符串拷贝操作
 
-- v1.0.0: 初始版本，支持企业微信、钉钉、Webhook推送
-- 支持规则匹配、模板系统、状态跟踪
-- 与数据库管理器集成
+### 网络优化
+
+- 设置合理的连接超时时间
+- 实现连接复用机制
+- 支持异步推送操作
+
+## 安全考虑
+
+### 配置安全
+
+- 不在代码中硬编码敏感信息
+- 使用安全的配置存储方式
+- 定期轮换API密钥
+
+### 网络安全
+
+- 使用HTTPS进行数据传输
+- 验证服务器证书
+- 实现请求签名验证
+
+## 版本历史
+
+- **v1.0.0**: 初始版本，支持企业微信、钉钉、Webhook推送
+- **v1.1.0**: 添加CLI演示程序和配置示例生成
+- **v1.2.0**: 优化错误处理和调试功能
+
+## 贡献指南
+
+1. 遵循现有代码风格和命名规范
+2. 添加完整的文档注释
+3. 实现单元测试
+4. 更新README文档
+5. 提交前进行代码审查
 
 ## 许可证
 
-本项目采用 MIT 许可证。
+本模块遵循 ESP-SMS-Relay 项目的许可证协议。
