@@ -21,6 +21,7 @@
 #include "phone_caller.h"
 #include "uart_monitor.h"
 #include "push_manager.h"
+#include "task_scheduler.h"
 #include "config.h"
 
 // 全局管理器实例引用
@@ -317,6 +318,10 @@ void loop() {
     if (terminalManager.isCLIRunning()) {
         terminalManager.handleSerialInput();
     }
+    
+    // 处理定时任务调度
+    TaskScheduler& taskScheduler = TaskScheduler::getInstance();
+    taskScheduler.handleTasks();
     
     // 这里可以添加其他系统任务
     // 例如：处理SMS、网络通信、状态监控等

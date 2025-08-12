@@ -791,6 +791,100 @@ int DatabaseManager::deleteOldSMSRecords(int daysOld) {
 }
 
 /**
+ * @brief 获取短信记录总数
+ * @return int 短信记录总数
+ */
+int DatabaseManager::getSMSRecordCount() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return 0;
+    }
+    
+    const char* sql = "SELECT COUNT(*) FROM sms_records";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return 0;
+    }
+    
+    int count = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+/**
+ * @brief 按数量清理短信记录（保留最新的指定数量）
+ * @param keepCount 保留的记录数量
+ * @return int 删除的记录数
+ */
+int DatabaseManager::cleanupSMSRecordsByCount(int keepCount) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return 0;
+    }
+    
+    // 首先获取当前记录总数
+    int totalCount = getSMSRecordCount();
+    if (totalCount <= keepCount) {
+        debugPrint("当前记录数(" + String(totalCount) + ")未超过保留数量(" + String(keepCount) + ")，无需清理");
+        return 0;
+    }
+    
+    // 删除最旧的记录，保留最新的keepCount条
+    const char* sql = "DELETE FROM sms_records WHERE id NOT IN (SELECT id FROM sms_records ORDER BY received_at DESC LIMIT ?)";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return 0;
+    }
+    
+    sqlite3_bind_int(stmt, 1, keepCount);
+    
+    rc = sqlite3_step(stmt);
+    int deletedCount = 0;
+    if (rc == SQLITE_DONE) {
+        deletedCount = sqlite3_changes(db);
+        debugPrint("按数量清理完成，删除了 " + String(deletedCount) + " 条记录，保留最新 " + String(keepCount) + " 条");
+    } else {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+    }
+    
+    sqlite3_finalize(stmt);
+    return deletedCount;
+}
+
+/**
+ * @brief 检查并执行短信记录清理（如果超过指定数量）
+ * @param maxCount 最大允许的记录数量
+ * @param keepCount 清理后保留的记录数量
+ * @return int 删除的记录数，0表示无需清理
+ */
+int DatabaseManager::checkAndCleanupSMSRecords(int maxCount, int keepCount) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return 0;
+    }
+    
+    int currentCount = getSMSRecordCount();
+    debugPrint("当前短信记录数: " + String(currentCount) + ", 最大允许: " + String(maxCount));
+    
+    if (currentCount > maxCount) {
+        debugPrint("短信记录数超过限制，开始清理...");
+        return cleanupSMSRecordsByCount(keepCount);
+    }
+    
+    return 0;
+}
+
+/**
  * @brief 启用调试模式
  * @param enable 是否启用
  */

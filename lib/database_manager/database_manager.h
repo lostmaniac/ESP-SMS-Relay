@@ -242,11 +242,32 @@ public:
     SMSRecord getSMSRecordById(int recordId);
 
     /**
+     * @brief 获取短信记录总数
+     * @return int 短信记录总数
+     */
+    int getSMSRecordCount();
+
+    /**
      * @brief 删除过期的短信记录
      * @param daysOld 保留天数
      * @return int 删除的记录数
      */
     int deleteOldSMSRecords(int daysOld = 30);
+
+    /**
+     * @brief 按数量清理短信记录（保留最新的指定数量）
+     * @param keepCount 保留的记录数量
+     * @return int 删除的记录数
+     */
+    int cleanupSMSRecordsByCount(int keepCount = 10000);
+
+    /**
+     * @brief 检查并执行短信记录清理（如果超过指定数量）
+     * @param maxCount 最大允许的记录数量
+     * @param keepCount 清理后保留的记录数量
+     * @return int 删除的记录数，0表示无需清理
+     */
+    int checkAndCleanupSMSRecords(int maxCount = 10000, int keepCount = 8000);
 
     /**
      * @brief 启用调试模式
