@@ -63,6 +63,13 @@ PushResult WechatChannel::push(const String& config, const PushContext& context)
     
     String message = applyTemplate(messageTemplate, context);
     
+    // 如果没有配置webhook_url，则只进行本地文字处理
+    if (webhookUrl.isEmpty()) {
+        debugPrint("企业微信纯文字模式 - 消息内容: " + message);
+        debugPrint("✅ 企业微信纯文字处理成功");
+        return PUSH_SUCCESS;
+    }
+    
     // 获取消息类型
     String msgType = configMap["msg_type"];
     if (msgType.isEmpty()) {
@@ -225,16 +232,14 @@ PushChannelHelp WechatChannel::getHelp() const {
  */
 bool WechatChannel::validateConfig(const std::map<String, String>& configMap) {
     auto it = configMap.find("webhook_url");
-    if (it == configMap.end() || it->second.isEmpty()) {
-        setError("企业微信配置缺少webhook_url");
-        return false;
-    }
     
-    // 验证URL格式
-    String webhookUrl = it->second;
-    if (!webhookUrl.startsWith("https://qyapi.weixin.qq.com/")) {
-        setError("企业微信webhook_url格式不正确，应以https://qyapi.weixin.qq.com/开头");
-        return false;
+    // webhook_url现在是可选的，如果提供了则验证格式
+    if (it != configMap.end() && !it->second.isEmpty()) {
+        String webhookUrl = it->second;
+        if (!webhookUrl.startsWith("https://qyapi.weixin.qq.com/")) {
+            setError("企业微信webhook_url格式不正确，应以https://qyapi.weixin.qq.com/开头");
+            return false;
+        }
     }
     
     return true;

@@ -57,6 +57,7 @@ bool initializeSystem() {
     Serial.println("✓ Filesystem Manager initialized");
     
     // 初始化数据库管理器
+    databaseManager.setDebugMode(true);  // 启用调试模式以获取详细错误信息
     if (!databaseManager.initialize()) {
         Serial.println("Failed to initialize Database Manager: " + databaseManager.getLastError());
         return false;
@@ -255,10 +256,8 @@ void setup() {
         }
     }
     
-    // 创建示例规则（仅在首次运行时）
-    if (terminalManager.getRuleCount() == 0) {
-        createExampleRules();
-    }
+    // 不再自动创建示例规则
+    // 用户可以通过CLI手动添加规则
     
     // 显示当前状态
     Serial.println("\n=== Current System Status ===");

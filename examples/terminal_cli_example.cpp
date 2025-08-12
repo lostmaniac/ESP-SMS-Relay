@@ -178,10 +178,8 @@ void setup() {
         }
     }
     
-    // 创建示例规则（仅在首次运行时）
-    if (terminalManager.getRuleCount() == 0) {
-        createExampleRules();
-    }
+    // 不再自动创建示例规则
+    // 用户可以通过CLI手动添加规则
     
     // 演示CLI功能
     demonstrateCLIFeatures();

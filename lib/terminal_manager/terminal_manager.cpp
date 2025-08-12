@@ -454,15 +454,16 @@ String TerminalManager::parseCommand(const String& command, std::vector<String>&
         bool inQuotes = false;
         char quoteChar = '\0';
         
-        // 解析一个token
+        // 解析一个token（保留所有引号）
         while (pos < trimmed.length()) {
             char c = trimmed.charAt(pos);
             
             if (!inQuotes) {
                 if (c == '"' || c == '\'') {
-                    // 开始引号
+                    // 开始引号，保留引号字符
                     inQuotes = true;
                     quoteChar = c;
+                    token += c;  // 保留引号
                     pos++;
                     continue;
                 } else if (c == ' ') {
@@ -471,7 +472,8 @@ String TerminalManager::parseCommand(const String& command, std::vector<String>&
                 }
             } else {
                 if (c == quoteChar) {
-                    // 结束引号
+                    // 结束引号，保留引号字符
+                    token += c;  // 保留引号
                     inQuotes = false;
                     pos++;
                     continue;
@@ -511,6 +513,255 @@ String TerminalManager::parseCommand(const String& command, std::vector<String>&
             firstToken = false;
         } else {
             args.push_back(token);
+        }
+    }
+    
+    return cmd;
+}
+
+String TerminalManager::parseNamedCommand(const String& command, std::map<String, String>& namedArgs, std::vector<String>& positionalArgs) {
+    namedArgs.clear();
+    positionalArgs.clear();
+    
+    String trimmed = command;
+    trimmed.trim();
+    
+    if (trimmed.isEmpty()) {
+        return "";
+    }
+    
+    // 使用支持引号的解析方式
+    std::vector<String> tokens;
+    int pos = 0;
+    String cmd = "";
+    bool firstToken = true;
+    
+    while (pos < trimmed.length()) {
+        // 跳过前导空格
+        while (pos < trimmed.length() && trimmed.charAt(pos) == ' ') {
+            pos++;
+        }
+        
+        if (pos >= trimmed.length()) {
+            break;
+        }
+        
+        String token = "";
+        bool inQuotes = false;
+        char quoteChar = '\0';
+        
+        // 解析一个token（保留所有引号）
+        while (pos < trimmed.length()) {
+            char c = trimmed.charAt(pos);
+            
+            if (!inQuotes) {
+                if (c == '"' || c == '\'') {
+                    // 开始引号，保留引号字符
+                    inQuotes = true;
+                    quoteChar = c;
+                    token += c;  // 保留引号
+                    pos++;
+                    continue;
+                } else if (c == ' ') {
+                    // 空格结束token
+                    break;
+                }
+            } else {
+                if (c == quoteChar) {
+                    // 结束引号，保留引号字符
+                    token += c;  // 保留引号
+                    inQuotes = false;
+                    pos++;
+                    continue;
+                } else if (c == '\\' && pos + 1 < trimmed.length()) {
+                    // 转义字符
+                    pos++;
+                    if (pos < trimmed.length()) {
+                        char nextChar = trimmed.charAt(pos);
+                        if (nextChar == 'n') {
+                            token += '\n';
+                        } else if (nextChar == 't') {
+                            token += '\t';
+                        } else if (nextChar == 'r') {
+                            token += '\r';
+                        } else if (nextChar == '\\') {
+                            token += '\\';
+                        } else if (nextChar == '"') {
+                            token += '"';
+                        } else if (nextChar == '\'') {
+                            token += '\'';
+                        } else {
+                            token += nextChar;
+                        }
+                    }
+                    pos++;
+                    continue;
+                }
+            }
+            
+            token += c;
+            pos++;
+        }
+        
+        if (firstToken) {
+            cmd = token;
+            firstToken = false;
+        } else {
+            tokens.push_back(token);
+        }
+    }
+    
+    // 首先处理config参数的特殊情况，直接从原始命令中提取
+    int configPos = trimmed.indexOf("config=");
+    if (configPos >= 0) {
+        int valueStart = configPos + 7; // "config="的长度
+        
+        // 找到config值的结束位置
+        int valueEnd = trimmed.length();
+        int braceCount = 0;
+        bool inQuotes = false;
+        char quoteChar = '\0';
+        
+        // 智能解析：考虑JSON中的嵌套括号和引号
+        for (int i = valueStart; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            
+            if (!inQuotes) {
+                if (c == '"' || c == '\'') {
+                    inQuotes = true;
+                    quoteChar = c;
+                } else if (c == '{') {
+                    braceCount++;
+                } else if (c == '}') {
+                    braceCount--;
+                } else if (c == ' ' && braceCount == 0) {
+                    // 只有在不在引号内且括号平衡时，空格才表示参数结束
+                    valueEnd = i;
+                    break;
+                }
+            } else {
+                if (c == quoteChar) {
+                    // 检查是否是转义的引号
+                    bool isEscaped = false;
+                    int backslashCount = 0;
+                    for (int j = i - 1; j >= 0 && trimmed.charAt(j) == '\\'; j--) {
+                        backslashCount++;
+                    }
+                    isEscaped = (backslashCount % 2 == 1);
+                    
+                    if (!isEscaped) {
+                        inQuotes = false;
+                        quoteChar = '\0';
+                    }
+                }
+            }
+        }
+        
+        // 提取原始JSON值，完全保留格式
+        if (valueEnd > valueStart) {
+            String configValue = trimmed.substring(valueStart, valueEnd);
+            namedArgs["config"] = configValue;
+            
+            // 从原始命令中移除config参数，避免重复处理
+            String beforeConfig = trimmed.substring(0, configPos);
+            String afterConfig = (valueEnd < trimmed.length()) ? trimmed.substring(valueEnd) : "";
+            trimmed = beforeConfig + afterConfig;
+            trimmed.trim();
+        }
+    }
+    
+    // 重新解析tokens（不包含config参数）
+    tokens.clear();
+    pos = 0;
+    firstToken = true;
+    
+    while (pos < trimmed.length()) {
+        // 跳过前导空格
+        while (pos < trimmed.length() && trimmed.charAt(pos) == ' ') {
+            pos++;
+        }
+        
+        if (pos >= trimmed.length()) {
+            break;
+        }
+        
+        String token = "";
+        bool inQuotes = false;
+        char quoteChar = '\0';
+        
+        // 解析一个token（保留所有引号）
+        while (pos < trimmed.length()) {
+            char c = trimmed.charAt(pos);
+            
+            if (!inQuotes) {
+                if (c == '"' || c == '\'') {
+                    // 开始引号，保留引号字符
+                    inQuotes = true;
+                    quoteChar = c;
+                    token += c;  // 保留引号
+                    pos++;
+                    continue;
+                } else if (c == ' ') {
+                    // 空格结束token
+                    break;
+                }
+            } else {
+                if (c == quoteChar) {
+                    // 结束引号，保留引号字符
+                    token += c;  // 保留引号
+                    inQuotes = false;
+                    pos++;
+                    continue;
+                } else if (c == '\\' && pos + 1 < trimmed.length()) {
+                    // 转义字符
+                    pos++;
+                    if (pos < trimmed.length()) {
+                        char nextChar = trimmed.charAt(pos);
+                        if (nextChar == 'n') {
+                            token += '\n';
+                        } else if (nextChar == 't') {
+                            token += '\t';
+                        } else if (nextChar == 'r') {
+                            token += '\r';
+                        } else if (nextChar == '\\') {
+                            token += '\\';
+                        } else if (nextChar == '"') {
+                            token += '"';
+                        } else if (nextChar == '\'') {
+                            token += '\'';
+                        } else {
+                            token += nextChar;
+                        }
+                    }
+                    pos++;
+                    continue;
+                }
+            }
+            
+            token += c;
+            pos++;
+        }
+        
+        if (firstToken) {
+            cmd = token;
+            firstToken = false;
+        } else {
+            tokens.push_back(token);
+        }
+    }
+    
+    // 解析其他命名参数和位置参数
+    for (const String& token : tokens) {
+        if (token.indexOf('=') > 0) {
+            // 命名参数格式: key=value
+            int equalPos = token.indexOf('=');
+            String key = token.substring(0, equalPos);
+            String value = token.substring(equalPos + 1);
+            
+            namedArgs[key] = value;
+        } else {
+            // 位置参数
+            positionalArgs.push_back(token);
         }
     }
     
@@ -557,6 +808,9 @@ void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
     Serial.println("企业微信:");
     Serial.println("  add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook_url\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY\"}\" \"余额\" false");
     Serial.println();
+    Serial.println("微信公众号:");
+    Serial.println("  add \"公众号推送\" \"95588\" \"wechat_official\" \"{\"app_id\":\"wx123456789\",\"app_secret\":\"your_app_secret\",\"open_ids\":\"openid1,openid2\",\"template_id\":\"template_id\",\"template_format\":{\"content\":{\"value\":\"{content}\",\"color\":\"#173177\"}}}\" \"余额\" false");
+    Serial.println();
     Serial.println("钉钉:");
     Serial.println("  add \"钉钉通知\" \"10086\" \"dingtalk\" \"{\"webhook_url\":\"https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN\"}\" \"流量\" false");
     Serial.println();
@@ -564,9 +818,10 @@ void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
     Serial.println("  add \"自定义推送\" \"*\" \"webhook\" \"{\"webhook_url\":\"https://api.example.com/webhook\",\"method\":\"POST\"}\" \"\" false");
     Serial.println();
     Serial.println("💡 提示: 输入 'help 渠道名' 查看详细配置说明，例如:");
-    Serial.println("  help wechat    - 查看企业微信详细配置");
-    Serial.println("  help dingtalk  - 查看钉钉详细配置");
-    Serial.println("  help webhook   - 查看Webhook详细配置");
+    Serial.println("  help wechat          - 查看企业微信详细配置");
+    Serial.println("  help wechat_official - 查看微信公众号详细配置");
+    Serial.println("  help dingtalk        - 查看钉钉详细配置");
+    Serial.println("  help webhook         - 查看Webhook详细配置");
 }
 
 void TerminalManager::executeListCommand(const std::vector<String>& args) {
@@ -600,45 +855,82 @@ void TerminalManager::executeListCommand(const std::vector<String>& args) {
 }
 
 void TerminalManager::executeAddCommand(const std::vector<String>& args) {
-    if (args.size() < 4) {
-        Serial.println("用法: add <名称> <发送方模式> <推送类型> <推送配置> [关键词] [是否默认转发]");
-        Serial.println("示例: add \"银行提醒\" \"95588\" \"wechat\" \"{\"webhook\":\"...\"}\" \"余额\" false");
-        Serial.println("参数说明:");
-        Serial.println("  名称: 规则名称");
-        Serial.println("  发送方模式: 发送方号码或模式");
-        Serial.println("  推送类型: wechat/dingtalk/webhook等");
-        Serial.println("  推送配置: JSON格式的推送配置");
-        Serial.println("  关键词: 可选，短信内容关键词过滤");
-        Serial.println("  是否默认转发: 可选，true/false，默认为false");
+    // 只支持命名参数格式
+    executeAddCommandWithNamedParams(args);
+}
+
+void TerminalManager::executeAddCommandWithNamedParams(const std::vector<String>& args) {
+    // 重新构建完整命令字符串
+    String fullCommand = "add";
+    for (const String& arg : args) {
+        fullCommand += " " + arg;
+    }
+    
+    // 调试输出：显示完整命令
+    Serial.println("[DEBUG] Full command: '" + fullCommand + "'");
+    Serial.println("[DEBUG] Command length: " + String(fullCommand.length()));
+    
+    // 使用支持引号的解析器解析命名参数
+    std::map<String, String> namedParams;
+    std::vector<String> positionalParams;
+    parseNamedCommand(fullCommand, namedParams, positionalParams);
+    
+    // 调试输出：显示解析后的参数
+    Serial.println("[DEBUG] Parsed named parameters:");
+    for (auto& pair : namedParams) {
+        Serial.println("[DEBUG]   " + pair.first + " = '" + pair.second + "'");
+    }
+    
+    // 检查必需参数
+    if (namedParams.find("name") == namedParams.end() || 
+        namedParams.find("sender") == namedParams.end() || 
+        namedParams.find("type") == namedParams.end() || 
+        namedParams.find("config") == namedParams.end()) {
+        
+        Serial.println("用法: add name=<规则名称> sender=<发送方> type=<推送类型> config=<推送配置> [keywords=<关键词>] [default=<true/false>] [enabled=<true/false>]");
+        Serial.println("示例: add name=银行提醒 sender=95588 type=wechat_official config={\"app_id\":\"wx123\",\"app_secret\":\"secret\",\"open_ids\":\"openid1,openid2\",\"template_id\":\"template123\",\"template_format\":{\"content\":{\"value\":\"{content}\",\"color\":\"#173177\"}}} keywords=余额 default=false");
+        Serial.println("\n参数说明:");
+        Serial.println("  name     - 规则名称 (必需)");
+        Serial.println("  sender   - 发送方号码或模式 (必需)");
+        Serial.println("  type     - 推送类型: wechat/wechat_official/dingtalk/webhook (必需)");
+        Serial.println("  config   - JSON格式的推送配置 (必需)");
+        Serial.println("  keywords - 短信内容关键词过滤 (可选)");
+        Serial.println("  default  - 是否默认转发: true/false (可选，默认false)");
+        Serial.println("  enabled  - 是否启用规则: true/false (可选，默认true)");
         return;
     }
     
     ForwardRule rule;
-    rule.ruleName = args[0];  // 使用 ruleName 而不是 name
-    rule.sourceNumber = args[1];  // 使用 sourceNumber 而不是 senderPattern
-    rule.pushType = args[2];
-    rule.pushConfig = args[3];
-    rule.enabled = true;
-    rule.isDefaultForward = false;  // 默认不是默认转发规则
+    rule.ruleName = namedParams["name"];
+    rule.sourceNumber = namedParams["sender"];
+    rule.pushType = namedParams["type"];
+    rule.pushConfig = namedParams["config"];
     
     // 可选参数
-    if (args.size() > 4) {
-        rule.keywords = args[4];  // 第5个参数是关键词
-    }
-    if (args.size() > 5) {
-        // 第6个参数是是否默认转发
-        String isDefaultStr = args[5];
-        isDefaultStr.toLowerCase();
-        if (isDefaultStr == "true" || isDefaultStr == "1" || isDefaultStr == "yes") {
-            rule.isDefaultForward = true;
-        } else if (isDefaultStr == "false" || isDefaultStr == "0" || isDefaultStr == "no") {
-            rule.isDefaultForward = false;
-        } else {
-            Serial.println("警告: 无效的默认转发参数 '" + args[5] + "'，使用默认值 false");
-            rule.isDefaultForward = false;
-        }
+    rule.keywords = namedParams.find("keywords") != namedParams.end() ? namedParams["keywords"] : "";
+    
+    // 默认转发参数
+    if (namedParams.find("default") != namedParams.end()) {
+        String defaultStr = namedParams["default"];
+        defaultStr.toLowerCase();
+        rule.isDefaultForward = (defaultStr == "true" || defaultStr == "1" || defaultStr == "yes");
+    } else {
+        rule.isDefaultForward = false;
     }
     
+    // 启用状态参数
+    if (namedParams.find("enabled") != namedParams.end()) {
+        String enabledStr = namedParams["enabled"];
+        enabledStr.toLowerCase();
+        rule.enabled = (enabledStr == "true" || enabledStr == "1" || enabledStr == "yes");
+    } else {
+        rule.enabled = true;
+    }
+    
+    addRuleAndShowResult(rule);
+}
+
+void TerminalManager::addRuleAndShowResult(const ForwardRule& rule) {
     int ruleId = addForwardRule(rule);
     if (ruleId > 0) {
         Serial.println("规则添加成功，ID: " + String(ruleId));
@@ -648,6 +940,7 @@ void TerminalManager::executeAddCommand(const std::vector<String>& args) {
         Serial.println("  推送类型: " + rule.pushType);
         Serial.println("  关键词: " + (rule.keywords.isEmpty() ? "无" : rule.keywords));
         Serial.println("  默认转发: " + String(rule.isDefaultForward ? "是" : "否"));
+        Serial.println("  启用状态: " + String(rule.enabled ? "是" : "否"));
     } else {
         Serial.println("添加规则失败: " + getLastError());
     }

@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <map>
 #include "forward_rule_manager.h"
 
 /**
@@ -268,6 +269,29 @@ private:
      * @return String 命令名称
      */
     String parseCommand(const String& command, std::vector<String>& args);
+    
+    /**
+     * @brief 解析命名参数命令行
+     * @param command 命令字符串
+     * @param namedArgs 解析后的命名参数映射
+     * @param positionalArgs 解析后的位置参数列表
+     * @return String 命令名称
+     */
+    String parseNamedCommand(const String& command, std::map<String, String>& namedArgs, std::vector<String>& positionalArgs);
+    
+
+    
+    /**
+     * @brief 使用命名参数执行添加规则命令
+     * @param args 参数列表
+     */
+    void executeAddCommandWithNamedParams(const std::vector<String>& args);
+    
+    /**
+     * @brief 添加规则并显示结果
+     * @param rule 规则对象
+     */
+    void addRuleAndShowResult(const ForwardRule& rule);
     
     /**
      * @brief 执行帮助命令

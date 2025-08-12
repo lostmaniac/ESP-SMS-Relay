@@ -133,7 +133,7 @@ bool SystemInit::initialize(bool runTests) {
     // 初始化数据库
     LOG_INFO(LOG_MODULE_SYSTEM, "正在初始化数据库...");
     DatabaseManager& databaseManager = DatabaseManager::getInstance();
-    databaseManager.setDebugMode(true); // 启用调试模式
+    databaseManager.setDebugMode(false); // 关闭调试模式，避免频繁的查询日志
     
     if (!databaseManager.initialize("sms_relay.db")) {
         setError("数据库初始化失败: " + databaseManager.getLastError());

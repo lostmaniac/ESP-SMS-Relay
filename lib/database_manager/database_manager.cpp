@@ -23,13 +23,18 @@ static bool querySuccess = false;
  * @return int 0表示继续，非0表示停止
  */
 static int queryCallback(void *data, int argc, char **argv, char **azColName) {
+    std::vector<std::map<String, String>>* results = static_cast<std::vector<std::map<String, String>>*>(data);
     std::map<String, String> row;
     for (int i = 0; i < argc; i++) {
         String colName = String(azColName[i]);
         String colValue = argv[i] ? String(argv[i]) : "";
         row[colName] = colValue;
     }
-    queryResults.push_back(row);
+    if (results) {
+        results->push_back(row);
+    } else {
+        queryResults.push_back(row);
+    }
     querySuccess = true;
     return 0;
 }
@@ -229,17 +234,17 @@ DatabaseInfo DatabaseManager::getDatabaseInfo() {
         }
         
         // 更新表数量和记录数
-        queryResults.clear();
-        if (executeQuery("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'", queryCallback, nullptr)) {
-            if (!queryResults.empty()) {
-                dbInfo.tableCount = queryResults[0]["count"].toInt();
+        std::vector<std::map<String, String>> tableResults;
+        if (executeQuery("SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'", queryCallback, &tableResults)) {
+            if (!tableResults.empty()) {
+                dbInfo.tableCount = tableResults[0]["count"].toInt();
             }
         }
         
-        queryResults.clear();
-        if (executeQuery("SELECT (SELECT COUNT(*) FROM forward_rules) + (SELECT COUNT(*) FROM sms_records) + (SELECT COUNT(*) FROM ap_config) as total", queryCallback, nullptr)) {
-            if (!queryResults.empty()) {
-                dbInfo.recordCount = queryResults[0]["total"].toInt();
+        std::vector<std::map<String, String>> recordResults;
+        if (executeQuery("SELECT (SELECT COUNT(*) FROM forward_rules) + (SELECT COUNT(*) FROM sms_records) + (SELECT COUNT(*) FROM ap_config) as total", queryCallback, &recordResults)) {
+            if (!recordResults.empty()) {
+                dbInfo.recordCount = recordResults[0]["total"].toInt();
             }
         }
     }
@@ -270,10 +275,10 @@ APConfig DatabaseManager::getAPConfig() {
         return config;
     }
     
-    queryResults.clear();
-    if (executeQuery("SELECT * FROM ap_config WHERE id = 1", queryCallback, nullptr)) {
-        if (!queryResults.empty()) {
-            auto& row = queryResults[0];
+    std::vector<std::map<String, String>> configResults;
+    if (executeQuery("SELECT * FROM ap_config WHERE id = 1", queryCallback, &configResults)) {
+        if (!configResults.empty()) {
+            auto& row = configResults[0];
             config.ssid = row["ssid"];
             config.password = row["password"];
             config.enabled = row["enabled"].toInt() == 1;
@@ -299,13 +304,33 @@ bool DatabaseManager::updateAPConfig(const APConfig& config) {
         return false;
     }
     
-    String sql = "UPDATE ap_config SET ssid='" + config.ssid + "', password='" + config.password + 
-                 "', enabled=" + String(config.enabled ? 1 : 0) + 
-                 ", channel=" + String(config.channel) + 
-                 ", max_connections=" + String(config.maxConnections) + 
-                 ", updated_at='" + getCurrentTimestamp() + "' WHERE id=1";
+    const char* sql = "UPDATE ap_config SET ssid=?, password=?, enabled=?, channel=?, max_connections=?, updated_at=? WHERE id=1";
+    sqlite3_stmt* stmt;
     
-    return executeSQL(sql);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    // 绑定参数 - 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+    sqlite3_bind_text(stmt, 1, config.ssid.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, config.password.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, config.enabled ? 1 : 0);
+    sqlite3_bind_int(stmt, 4, config.channel);
+    sqlite3_bind_int(stmt, 5, config.maxConnections);
+    String timestamp = getCurrentTimestamp();
+    sqlite3_bind_text(stmt, 6, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -319,23 +344,36 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
         return -1;
     }
     
-    String timestamp = getCurrentTimestamp();
+    const char* sql = "INSERT INTO forward_rules (rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    sqlite3_stmt* stmt;
     
-    // 对字符串字段进行SQL转义处理
-    String escapedRuleName = escapeString(rule.ruleName);
-    String escapedSourceNumber = escapeString(rule.sourceNumber);
-    String escapedKeywords = escapeString(rule.keywords);
-    String escapedPushType = escapeString(rule.pushType);
-    String escapedPushConfig = escapeString(rule.pushConfig);
-    
-    String sql = "INSERT INTO forward_rules (rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at) VALUES ('" +
-                  escapedRuleName + "', '" + escapedSourceNumber + "', '" + escapedKeywords + "', '" + 
-                  escapedPushType + "', '" + escapedPushConfig + "', " + String(rule.enabled ? 1 : 0) + ", " + String(rule.isDefaultForward ? 1 : 0) + ", '" + timestamp + "', '" + timestamp + "')";
-    
-    if (executeSQL(sql)) {
-        return sqlite3_last_insert_rowid(db);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return -1;
     }
-    return -1;
+    
+    // 绑定参数 - 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+    String timestamp = getCurrentTimestamp();
+    sqlite3_bind_text(stmt, 1, rule.ruleName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, rule.sourceNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, rule.keywords.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, rule.pushType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, rule.pushConfig.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 6, rule.enabled ? 1 : 0);
+    sqlite3_bind_int(stmt, 7, rule.isDefaultForward ? 1 : 0);
+    sqlite3_bind_text(stmt, 8, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 9, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return -1;
+    }
+    
+    return sqlite3_last_insert_rowid(db);
 }
 
 /**
@@ -350,20 +388,36 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
         return false;
     }
     
-    // 对字符串字段进行SQL转义处理
-    String escapedRuleName = escapeString(rule.ruleName);
-    String escapedSourceNumber = escapeString(rule.sourceNumber);
-    String escapedKeywords = escapeString(rule.keywords);
-    String escapedPushType = escapeString(rule.pushType);
-    String escapedPushConfig = escapeString(rule.pushConfig);
+    const char* sql = "UPDATE forward_rules SET rule_name=?, source_number=?, keywords=?, push_type=?, push_config=?, enabled=?, is_default_forward=?, updated_at=? WHERE id=?";
+    sqlite3_stmt* stmt;
     
-    String sql = "UPDATE forward_rules SET rule_name='" + escapedRuleName + "', source_number='" + escapedSourceNumber + 
-                  "', keywords='" + escapedKeywords + "', push_type='" + escapedPushType + 
-                  "', push_config='" + escapedPushConfig + "', enabled=" + String(rule.enabled ? 1 : 0) + 
-                  ", is_default_forward=" + String(rule.isDefaultForward ? 1 : 0) + 
-                  ", updated_at='" + getCurrentTimestamp() + "' WHERE id=" + String(rule.id);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
     
-    return executeSQL(sql);
+    // 绑定参数 - 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+    String timestamp = getCurrentTimestamp();
+    sqlite3_bind_text(stmt, 1, rule.ruleName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, rule.sourceNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, rule.keywords.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, rule.pushType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, rule.pushConfig.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 6, rule.enabled ? 1 : 0);
+    sqlite3_bind_int(stmt, 7, rule.isDefaultForward ? 1 : 0);
+    sqlite3_bind_text(stmt, 8, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 9, rule.id);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -378,8 +432,26 @@ bool DatabaseManager::deleteForwardRule(int ruleId) {
         return false;
     }
     
-    String sql = "DELETE FROM forward_rules WHERE id=" + String(ruleId);
-    return executeSQL(sql);
+    const char* sql = "DELETE FROM forward_rules WHERE id=?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    sqlite3_bind_int(stmt, 1, ruleId);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -393,9 +465,10 @@ std::vector<ForwardRule> DatabaseManager::getAllForwardRules() {
         return rules;
     }
     
-    queryResults.clear();
-    if (executeQuery("SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules ORDER BY id", queryCallback, nullptr)) {
-        for (const auto& row : queryResults) {
+    // 使用线程安全的方式，避免全局变量冲突
+    std::vector<std::map<String, String>> localResults;
+    if (executeQuery("SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules ORDER BY id", queryCallback, &localResults)) {
+        for (const auto& row : localResults) {
             ForwardRule rule;
             rule.id = row.at("id").toInt();
             rule.ruleName = row.at("rule_name");
@@ -424,27 +497,35 @@ ForwardRule DatabaseManager::getForwardRuleById(int ruleId) {
     rule.id = -1; // 表示未找到
     
     if (!isReady()) {
+        setError("数据库未就绪");
         return rule;
     }
     
-    queryResults.clear();
-    String sql = "SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules WHERE id=" + String(ruleId);
-    if (executeQuery(sql, queryCallback, nullptr)) {
-        if (!queryResults.empty()) {
-            auto& row = queryResults[0];
-            rule.id = row["id"].toInt();
-            rule.ruleName = row["rule_name"];
-            rule.sourceNumber = row["source_number"];
-            rule.keywords = row["keywords"];
-            rule.pushType = row["push_type"];
-            rule.pushConfig = row["push_config"];
-            rule.enabled = row["enabled"].toInt() == 1;
-            rule.isDefaultForward = row["is_default_forward"].toInt() == 1;
-            rule.createdAt = row["created_at"];
-            rule.updatedAt = row["updated_at"];
-        }
+    const char* sql = "SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules WHERE id=?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return rule;
     }
     
+    sqlite3_bind_int(stmt, 1, ruleId);
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        rule.id = sqlite3_column_int(stmt, 0);
+        rule.ruleName = String((char*)sqlite3_column_text(stmt, 1));
+        rule.sourceNumber = String((char*)sqlite3_column_text(stmt, 2));
+        rule.keywords = String((char*)sqlite3_column_text(stmt, 3));
+        rule.pushType = String((char*)sqlite3_column_text(stmt, 4));
+        rule.pushConfig = String((char*)sqlite3_column_text(stmt, 5));
+        rule.enabled = sqlite3_column_int(stmt, 6) == 1;
+        rule.isDefaultForward = sqlite3_column_int(stmt, 7) == 1;
+        rule.createdAt = String((char*)sqlite3_column_text(stmt, 8));
+        rule.updatedAt = String((char*)sqlite3_column_text(stmt, 9));
+    }
+    
+    sqlite3_finalize(stmt);
     return rule;
 }
 
@@ -461,22 +542,34 @@ int DatabaseManager::addSMSRecord(const SMSRecord& record) {
     
     time_t receivedTime = record.receivedAt != 0 ? record.receivedAt : time(nullptr);
     
-    // 转义字符串防止SQL注入和特殊字符问题
-    String escapedFromNumber = escapeString(record.fromNumber);
-    String escapedToNumber = escapeString(record.toNumber);
-    String escapedContent = escapeString(record.content);
-    String escapedStatus = escapeString(record.status);
-    String escapedForwardedAt = escapeString(record.forwardedAt);
+    const char* sql = "INSERT INTO sms_records (from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    sqlite3_stmt* stmt;
     
-    String sql = "INSERT INTO sms_records (from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at) VALUES ('" +
-                 escapedFromNumber + "', '" + escapedToNumber + "', '" + escapedContent + "', " + 
-                 String(record.ruleId) + ", " + String(record.forwarded ? 1 : 0) + ", '" + escapedStatus + "', '" + 
-                 escapedForwardedAt + "', " + String(receivedTime) + ")";
-    
-    if (executeSQL(sql)) {
-        return sqlite3_last_insert_rowid(db);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return -1;
     }
-    return -1;
+    
+    // 绑定参数 - 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+    sqlite3_bind_text(stmt, 1, record.fromNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, record.toNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, record.content.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, record.ruleId);
+    sqlite3_bind_int(stmt, 5, record.forwarded ? 1 : 0);
+    sqlite3_bind_text(stmt, 6, record.status.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, record.forwardedAt.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 8, receivedTime);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return -1;
+    }
+    
+    return sqlite3_last_insert_rowid(db);
 }
 
 /**
@@ -491,19 +584,35 @@ bool DatabaseManager::updateSMSRecord(const SMSRecord& record) {
         return false;
     }
     
-    // 转义字符串防止SQL注入和特殊字符问题
-    String escapedFromNumber = escapeString(record.fromNumber);
-    String escapedToNumber = escapeString(record.toNumber);
-    String escapedContent = escapeString(record.content);
-    String escapedStatus = escapeString(record.status);
-    String escapedForwardedAt = escapeString(record.forwardedAt);
+    const char* sql = "UPDATE sms_records SET from_number=?, to_number=?, content=?, rule_id=?, forwarded=?, status=?, forwarded_at=?, received_at=? WHERE id=?";
+    sqlite3_stmt* stmt;
     
-    String sql = "UPDATE sms_records SET from_number='" + escapedFromNumber + "', to_number='" + escapedToNumber + 
-                 "', content='" + escapedContent + "', rule_id=" + String(record.ruleId) + 
-                 ", forwarded=" + String(record.forwarded ? 1 : 0) + ", status='" + escapedStatus + 
-                 "', forwarded_at='" + escapedForwardedAt + "', received_at=" + String(record.receivedAt) + " WHERE id=" + String(record.id);
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
     
-    return executeSQL(sql);
+    // 绑定参数 - 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+    sqlite3_bind_text(stmt, 1, record.fromNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, record.toNumber.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, record.content.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, record.ruleId);
+    sqlite3_bind_int(stmt, 5, record.forwarded ? 1 : 0);
+    sqlite3_bind_text(stmt, 6, record.status.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 7, record.forwardedAt.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 8, record.receivedAt);
+    sqlite3_bind_int(stmt, 9, record.id);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    return true;
 }
 
 /**
@@ -519,24 +628,33 @@ std::vector<SMSRecord> DatabaseManager::getSMSRecords(int limit, int offset) {
         return records;
     }
     
-    queryResults.clear();
-    String sql = "SELECT * FROM sms_records ORDER BY received_at DESC LIMIT " + String(limit) + " OFFSET " + String(offset);
-    if (executeQuery(sql, queryCallback, nullptr)) {
-        for (const auto& row : queryResults) {
-            SMSRecord record;
-            record.id = row.at("id").toInt();
-            record.fromNumber = row.at("from_number");
-            record.toNumber = row.at("to_number");
-            record.content = row.at("content");
-            record.ruleId = row.at("rule_id").toInt();
-            record.forwarded = row.at("forwarded").toInt() == 1;
-            record.status = row.at("status");
-            record.forwardedAt = row.at("forwarded_at");
-            record.receivedAt = row.at("received_at").toInt();
-            records.push_back(record);
-        }
+    const char* sql = "SELECT id, from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at FROM sms_records ORDER BY received_at DESC LIMIT ? OFFSET ?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return records;
     }
     
+    sqlite3_bind_int(stmt, 1, limit);
+    sqlite3_bind_int(stmt, 2, offset);
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        SMSRecord record;
+        record.id = sqlite3_column_int(stmt, 0);
+        record.fromNumber = String((char*)sqlite3_column_text(stmt, 1));
+        record.toNumber = String((char*)sqlite3_column_text(stmt, 2));
+        record.content = String((char*)sqlite3_column_text(stmt, 3));
+        record.ruleId = sqlite3_column_int(stmt, 4);
+        record.forwarded = sqlite3_column_int(stmt, 5) == 1;
+        record.status = String((char*)sqlite3_column_text(stmt, 6));
+        record.forwardedAt = String((char*)sqlite3_column_text(stmt, 7));
+        record.receivedAt = sqlite3_column_int64(stmt, 8);
+        records.push_back(record);
+    }
+    
+    sqlite3_finalize(stmt);
     return records;
 }
 
@@ -550,26 +668,34 @@ SMSRecord DatabaseManager::getSMSRecordById(int recordId) {
     record.id = -1; // 表示未找到
     
     if (!isReady()) {
+        setError("数据库未就绪");
         return record;
     }
     
-    queryResults.clear();
-    String sql = "SELECT * FROM sms_records WHERE id=" + String(recordId);
-    if (executeQuery(sql, queryCallback, nullptr)) {
-        if (!queryResults.empty()) {
-            auto& row = queryResults[0];
-            record.id = row["id"].toInt();
-            record.fromNumber = row["from_number"];
-            record.toNumber = row["to_number"];
-            record.content = row["content"];
-            record.ruleId = row["rule_id"].toInt();
-            record.forwarded = row["forwarded"].toInt() == 1;
-            record.status = row["status"];
-            record.forwardedAt = row["forwarded_at"];
-            record.receivedAt = row["received_at"].toInt();
-        }
+    const char* sql = "SELECT id, from_number, to_number, content, rule_id, forwarded, status, forwarded_at, received_at FROM sms_records WHERE id=?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return record;
     }
     
+    sqlite3_bind_int(stmt, 1, recordId);
+    
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        record.id = sqlite3_column_int(stmt, 0);
+        record.fromNumber = String((char*)sqlite3_column_text(stmt, 1));
+        record.toNumber = String((char*)sqlite3_column_text(stmt, 2));
+        record.content = String((char*)sqlite3_column_text(stmt, 3));
+        record.ruleId = sqlite3_column_int(stmt, 4);
+        record.forwarded = sqlite3_column_int(stmt, 5) == 1;
+        record.status = String((char*)sqlite3_column_text(stmt, 6));
+        record.forwardedAt = String((char*)sqlite3_column_text(stmt, 7));
+        record.receivedAt = sqlite3_column_int64(stmt, 8);
+    }
+    
+    sqlite3_finalize(stmt);
     return record;
 }
 
@@ -585,11 +711,27 @@ int DatabaseManager::deleteOldSMSRecords(int daysOld) {
     }
     
     time_t cutoffTime = time(nullptr) - (daysOld * 24 * 60 * 60); // 计算截止时间戳
-    String sql = "DELETE FROM sms_records WHERE received_at < " + String(cutoffTime);
-    if (executeSQL(sql)) {
-        return sqlite3_changes(db);
+    const char* sql = "DELETE FROM sms_records WHERE received_at < ?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return 0;
     }
-    return 0;
+    
+    sqlite3_bind_int64(stmt, 1, cutoffTime);
+    
+    rc = sqlite3_step(stmt);
+    int deletedCount = 0;
+    if (rc == SQLITE_DONE) {
+        deletedCount = sqlite3_changes(db);
+    } else {
+        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+    }
+    
+    sqlite3_finalize(stmt);
+    return deletedCount;
 }
 
 /**
@@ -685,19 +827,50 @@ bool DatabaseManager::initializeDefaultData() {
     debugPrint("开始初始化默认数据");
     
     // 检查AP配置是否已存在
-    queryResults.clear();
-    if (executeQuery("SELECT COUNT(*) as count FROM ap_config", queryCallback, nullptr)) {
-        if (!queryResults.empty() && queryResults[0]["count"].toInt() == 0) {
-            // 插入默认AP配置
-            String timestamp = getCurrentTimestamp();
-            String insertAPConfig = "INSERT INTO ap_config (ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES ('ESP-SMS-Relay', '12345678', 1, 1, 4, '" + timestamp + "', '" + timestamp + "')";
-            
-            if (!executeSQL(insertAPConfig)) {
-                setError("插入默认AP配置失败");
-                return false;
-            }
-            debugPrint("默认AP配置已创建");
+    const char* countSql = "SELECT COUNT(*) FROM ap_config";
+    sqlite3_stmt* countStmt;
+    
+    int rc = sqlite3_prepare_v2(db, countSql, -1, &countStmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备查询语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    int count = 0;
+    if (sqlite3_step(countStmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(countStmt, 0);
+    }
+    sqlite3_finalize(countStmt);
+    
+    if (count == 0) {
+        // 插入默认AP配置
+        const char* insertSql = "INSERT INTO ap_config (ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        sqlite3_stmt* insertStmt;
+        
+        rc = sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nullptr);
+        if (rc != SQLITE_OK) {
+            setError("准备插入语句失败: " + String(sqlite3_errmsg(db)));
+            return false;
         }
+        
+        String timestamp = getCurrentTimestamp();
+        // 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
+        sqlite3_bind_text(insertStmt, 1, "ESP-SMS-Relay", -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 2, "12345678", -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(insertStmt, 3, 1);
+        sqlite3_bind_int(insertStmt, 4, 1);
+        sqlite3_bind_int(insertStmt, 5, 4);
+        sqlite3_bind_text(insertStmt, 6, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 7, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+        
+        rc = sqlite3_step(insertStmt);
+        sqlite3_finalize(insertStmt);
+        
+        if (rc != SQLITE_DONE) {
+            setError("插入默认AP配置失败: " + String(sqlite3_errmsg(db)));
+            return false;
+        }
+        debugPrint("默认AP配置已创建");
     }
     
     debugPrint("默认数据初始化完成");

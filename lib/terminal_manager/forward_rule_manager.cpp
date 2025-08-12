@@ -8,6 +8,7 @@
 #include "forward_rule_manager.h"
 #include "database_manager.h"
 #include "log_manager.h"
+#include "../push_manager/push_channel_registry.h"
 #include <ArduinoJson.h>
 #include <regex>
 #include <algorithm>
@@ -65,10 +66,21 @@ int ForwardRuleManager::addRule(const ForwardRule& rule) {
         return -1;
     }
     
+    // 调试输出：显示接收到的规则配置
+    Serial.println("[DEBUG] Adding rule with config: '" + rule.pushConfig + "'");
+    Serial.println("[DEBUG] Config length: " + String(rule.pushConfig.length()));
+    
     // 验证规则
     RuleValidationError validationResult = validateRule(rule);
     if (validationResult != RULE_VALID) {
-        lastError = "Rule validation failed: " + getValidationErrorDescription(validationResult);
+        String errorDesc = getValidationErrorDescription(validationResult);
+        // 如果是JSON验证错误，添加详细的错误信息
+        if (validationResult == RULE_ERROR_INVALID_JSON) {
+            // 保存JSON验证的详细错误信息
+            String jsonError = lastError;
+            errorDesc = "Invalid push config format (must be valid JSON): " + jsonError + ". Received config: '" + rule.pushConfig + "'";
+        }
+        lastError = "Rule validation failed: " + errorDesc;
         return -1;
     }
     
@@ -409,9 +421,9 @@ RuleValidationError ForwardRuleManager::validateRule(const ForwardRule& rule) {
         return RULE_ERROR_INVALID_REGEX;
     }
     
-    // 检查推送类型
-    if (rule.pushType != "wechat" && rule.pushType != "dingtalk" && 
-        rule.pushType != "webhook" && rule.pushType != "email") {
+    // 检查推送类型（动态检查已注册的渠道）
+    PushChannelRegistry& registry = PushChannelRegistry::getInstance();
+    if (!registry.isChannelSupported(rule.pushType)) {
         return RULE_ERROR_INVALID_PUSH_TYPE;
     }
     
@@ -860,7 +872,7 @@ String ForwardRuleManager::getValidationErrorDescription(RuleValidationError err
         case RULE_ERROR_INVALID_JSON:
             return "Invalid push config format (must be valid JSON)";
         case RULE_ERROR_INVALID_PUSH_TYPE:
-            return "Invalid push type (must be wechat, dingtalk, webhook, or email)";
+            return "Invalid push type (must be wechat, dingtalk, webhook, or wechat_official)";
         default:
             return "Unknown validation error";
     }
@@ -925,24 +937,42 @@ String ForwardRuleManager::getLastError() {
 }
 
 bool ForwardRuleManager::validateJSON(const String& jsonStr) {
+    // 检查空字符串
+    if (jsonStr.isEmpty()) {
+        lastError = "JSON string is empty";
+        return false;
+    }
+    
+    // 检查基本的JSON格式
+    String trimmed = jsonStr;
+    trimmed.trim();
+    
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+        lastError = "JSON must start with '{' and end with '}'";
+        return false;
+    }
+    
     // 使用ArduinoJson库进行JSON验证
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     
     // 尝试解析JSON
     DeserializationError error = deserializeJson(doc, jsonStr);
     
-    // 如果解析失败，返回false
+    // 如果解析失败，返回false并记录详细错误
     if (error) {
+        lastError = "JSON parse error: " + String(error.c_str());
         return false;
     }
     
     // 检查是否为空对象
     if (doc.isNull()) {
+        lastError = "JSON document is null";
         return false;
     }
     
     // 检查是否为对象类型
     if (!doc.is<JsonObject>()) {
+        lastError = "JSON must be an object, not array or primitive";
         return false;
     }
     

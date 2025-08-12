@@ -152,6 +152,13 @@ public:
      */
     void setDebugMode(bool enable);
 
+    /**
+     * @brief 手动刷新规则缓存
+     * @return true 刷新成功
+     * @return false 刷新失败
+     */
+    bool refreshRuleCache();
+
 private:
     /**
      * @brief 私有构造函数（单例模式）
@@ -237,12 +244,19 @@ private:
     void debugPrint(const String& message);
 
 private:
+    /**
+     * @brief 加载规则到缓存
+     * @return true 加载成功
+     * @return false 加载失败
+     */
+    bool loadRulesToCache();
+
+private:
     String lastError;              ///< 最后的错误信息
     bool debugMode;                ///< 调试模式
     bool initialized;              ///< 是否已初始化
     std::vector<ForwardRule> cachedRules; ///< 缓存的转发规则
-    unsigned long lastRuleUpdate;  ///< 上次规则更新时间
-    static const unsigned long RULE_CACHE_TIMEOUT = 60000; ///< 规则缓存超时时间（毫秒）
+    bool cacheLoaded;              ///< 缓存是否已加载
 };
 
 #endif // PUSH_MANAGER_H

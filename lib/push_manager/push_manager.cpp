@@ -12,8 +12,10 @@
 
 // 包含所有推送渠道实现以触发自动注册
 #include "channels/wechat_channel.cpp"
+#include "channels/wechat_official_channel.cpp"
 #include "channels/dingtalk_channel.cpp"
 #include "channels/webhook_channel.cpp"
+#include "channels/feishu_bot_channel.cpp"
 
 // 单例实例
 PushManager& PushManager::getInstance() {
@@ -203,53 +205,12 @@ PushResult PushManager::testPushConfig(int ruleId, const String& testMessage) {
 std::vector<ForwardRule> PushManager::matchForwardRules(const PushContext& context) {
     std::vector<ForwardRule> matchedRules;
     
-    // 检查是否需要更新规则缓存（首次调用或超时）
-    if (lastRuleUpdate == 0 || millis() - lastRuleUpdate > RULE_CACHE_TIMEOUT) {
-        debugPrint("规则缓存超时，开始更新缓存...");
-        debugPrint("当前时间: " + String(millis()) + ", 上次更新: " + String(lastRuleUpdate));
-        debugPrint("缓存超时时间: " + String(RULE_CACHE_TIMEOUT) + "ms");
-        
-        DatabaseManager& dbManager = DatabaseManager::getInstance();
-        debugPrint("数据库管理器状态: " + String(dbManager.isReady() ? "就绪" : "未就绪"));
-        
-        if (!dbManager.isReady()) {
-            debugPrint("数据库未就绪，无法更新规则缓存");
-            debugPrint("数据库错误: " + dbManager.getLastError());
-        } else {
-            debugPrint("开始查询所有转发规则...");
-            
-            // 先获取查询结果
-            std::vector<ForwardRule> queryResult = dbManager.getAllForwardRules();
-            debugPrint("数据库查询返回 " + String(queryResult.size()) + " 条规则");
-            
-            // 清空当前缓存
-            cachedRules.clear();
-            debugPrint("已清空缓存，当前缓存大小: " + String(cachedRules.size()));
-            
-            // 逐个添加规则到缓存
-            for (const auto& rule : queryResult) {
-                cachedRules.push_back(rule);
-                debugPrint("添加规则到缓存: [" + String(rule.id) + "] " + rule.ruleName);
-            }
-            
-            lastRuleUpdate = millis();
-            debugPrint("缓存更新完成，最终缓存大小: " + String(cachedRules.size()));
-            
-            if (cachedRules.empty()) {
-                debugPrint("警告: 缓存仍然为空！");
-                debugPrint("数据库最后错误: " + dbManager.getLastError());
-                
-                // 再次尝试查询
-                debugPrint("尝试再次查询数据库...");
-                std::vector<ForwardRule> retryResult = dbManager.getAllForwardRules();
-                debugPrint("重试查询返回 " + String(retryResult.size()) + " 条规则");
-            } else {
-                debugPrint("缓存规则列表:");
-                for (size_t i = 0; i < cachedRules.size(); i++) {
-                    const auto& rule = cachedRules[i];
-                    debugPrint("  [" + String(rule.id) + "] " + rule.ruleName + " (启用: " + String(rule.enabled ? "是" : "否") + ")");
-                }
-            }
+    // 检查缓存是否已加载，如果没有则加载
+    if (!cacheLoaded) {
+        debugPrint("规则缓存未加载，开始加载缓存...");
+        if (!loadRulesToCache()) {
+            debugPrint("加载规则缓存失败: " + lastError);
+            return matchedRules; // 返回空列表
         }
     }
     
