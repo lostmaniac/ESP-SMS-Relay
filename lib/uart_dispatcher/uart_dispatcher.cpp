@@ -39,3 +39,7 @@ void UartDispatcher::setSuppressOutput(bool suppress) {
 bool UartDispatcher::isOutputSuppressed() const {
     return suppressOutput;
 }
+
+bool UartDispatcher::isBufferingPDU() const {
+    return isBuffering;
+}

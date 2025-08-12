@@ -198,6 +198,18 @@ public:
      */
     ForwardRule getForwardRuleById(int ruleId);
 
+    /**
+     * @brief 获取转发规则总数
+     * @return int 规则总数
+     */
+    int getForwardRuleCount();
+
+    /**
+     * @brief 获取启用的转发规则数量
+     * @return int 启用的规则数量
+     */
+    int getEnabledForwardRuleCount();
+
     // 短信记录管理
     /**
      * @brief 添加短信记录
@@ -313,12 +325,7 @@ private:
      */
     String getCurrentTimestamp();
 
-    /**
-     * @brief 转义SQL字符串，防止SQL注入
-     * @param str 待转义的字符串
-     * @return String 转义后的字符串
-     */
-    String escapeString(const String& str);
+
 
 private:
     sqlite3* db;                    ///< SQLite数据库连接

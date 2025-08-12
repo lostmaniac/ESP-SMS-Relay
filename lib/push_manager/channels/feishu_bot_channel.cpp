@@ -8,9 +8,11 @@
 #include "feishu_bot_channel.h"
 #include "../push_channel_registry.h"
 #include "../../http_client/http_client.h"
+#include "../../gsm_service/gsm_service.h"
 #include <ArduinoJson.h>
 #include <mbedtls/md.h>
 #include <mbedtls/base64.h>
+#include <time.h>
 
 /**
  * @brief 构造函数
@@ -56,6 +58,9 @@ PushResult FeishuBotChannel::push(const String& config, const PushContext& conte
     
     String webhookUrl = configMap["webhook_url"];
     String messageType = configMap["message_type"];
+    if (messageType.isEmpty()) {
+        messageType = "text"; // 默认使用文本消息类型
+    }
     String secret = configMap["secret"];
     String title = configMap["title"];
     
@@ -78,23 +83,8 @@ PushResult FeishuBotChannel::push(const String& config, const PushContext& conte
     debugPrint("标题: " + title);
     debugPrint("内容: " + content);
     
-    FeishuMessageType msgType = parseMessageType(messageType);
-    bool success = false;
-    
-    switch (msgType) {
-        case FEISHU_TEXT:
-            success = sendTextMessage(webhookUrl, content, secret);
-            break;
-        case FEISHU_RICH_TEXT:
-            success = sendRichTextMessage(webhookUrl, title, content, secret);
-            break;
-        case FEISHU_POST:
-            success = sendPostMessage(webhookUrl, title, content, secret);
-            break;
-        default:
-            setError("不支持的消息类型: " + messageType);
-            return PUSH_CONFIG_ERROR;
-    }
+    // 只支持文本消息类型
+    bool success = sendTextMessage(webhookUrl, content, secret);
     
     if (success) {
         debugPrint("✅ 飞书机器人推送成功");
@@ -132,16 +122,14 @@ PushChannelExample FeishuBotChannel::getConfigExample() const {
   "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxxxxxxxxxx",
   "message_type": "text",
   "secret": "your_secret_key",
-  "title": "短信转发通知",
   "message_template": "📱 短信转发通知\n\n📞 发送方：{sender}\n📄 内容：{content}\n🕐 时间：{timestamp}"
 })";
     example.usage = R"(使用说明：
 1. 在飞书群组中添加自定义机器人，获取Webhook地址
-2. message_type支持：text（文本）、rich_text（富文本）、post（消息卡片）
+2. message_type仅支持：text（文本消息）
 3. secret为可选的签名密钥，用于验证请求安全性
-4. title为消息标题（富文本和消息卡片类型使用）
-5. message_template支持占位符：{sender}、{content}、{timestamp}、{sms_id}
-6. 消息内容最大30000字符，标题最大100字符)";
+4. message_template支持占位符：{sender}、{content}、{timestamp}、{sms_id}
+5. 消息内容最大30000字符)";
     
     return example;
 }
@@ -172,28 +160,12 @@ String FeishuBotChannel::getCliDemo() const {
     demo += "    FeishuBotChannel feishu;\n";
     demo += "    feishu.setDebugMode(true);\n";
     demo += "    \n";
-    demo += "    // 配置示例1：文本消息（无签名）\n";
+    demo += "    // 配置示例：文本消息\n";
     demo += "    String textConfig = \"{\n";
     demo += "        \\\"webhook_url\\\": \\\"https://open.feishu.cn/open-apis/bot/v2/hook/xxx\\\",\n";
     demo += "        \\\"message_type\\\": \\\"text\\\",\n";
-    demo += "        \\\"message_template\\\": \\\"📱 短信通知\\\\n发送方：{sender}\\\\n内容：{content}\\\"\n";
-    demo += "    }\";\n";
-    demo += "    \n";
-    demo += "    // 配置示例2：富文本消息（带签名）\n";
-    demo += "    String richConfig = \"{\n";
-    demo += "        \\\"webhook_url\\\": \\\"https://open.feishu.cn/open-apis/bot/v2/hook/xxx\\\",\n";
-    demo += "        \\\"message_type\\\": \\\"rich_text\\\",\n";
     demo += "        \\\"secret\\\": \\\"your_secret_key\\\",\n";
-    demo += "        \\\"title\\\": \\\"短信转发通知\\\",\n";
-    demo += "        \\\"message_template\\\": \\\"发送方：{sender}\\\\n内容：{content}\\\\n时间：{timestamp}\\\"\n";
-    demo += "    }\";\n";
-    demo += "    \n";
-    demo += "    // 配置示例3：消息卡片\n";
-    demo += "    String postConfig = \"{\n";
-    demo += "        \\\"webhook_url\\\": \\\"https://open.feishu.cn/open-apis/bot/v2/hook/xxx\\\",\n";
-    demo += "        \\\"message_type\\\": \\\"post\\\",\n";
-    demo += "        \\\"title\\\": \\\"📱 短信转发通知\\\",\n";
-    demo += "        \\\"message_template\\\": \\\"**发送方：** {sender}\\\\n**内容：** {content}\\\\n**时间：** {timestamp}\\\"\n";
+    demo += "        \\\"message_template\\\": \\\"📱 短信通知\\\\n发送方：{sender}\\\\n内容：{content}\\\\n时间：{timestamp}\\\"\n";
     demo += "    }\";\n";
     demo += "    \n";
     demo += "    // 测试推送\n";
@@ -218,9 +190,8 @@ PushChannelHelp FeishuBotChannel::getHelp() const {
     help.description = "通过飞书自定义机器人向群组推送短信通知";
     help.configFields = R"(配置字段说明：
 • webhook_url: 飞书机器人Webhook地址（必填）
-• message_type: 消息类型，支持text/rich_text/post（默认text）
+• message_type: 消息类型，仅支持text（默认text）
 • secret: 签名密钥，用于安全校验（可选）
-• title: 消息标题，用于富文本和消息卡片（可选）
 • message_template: 消息模板，支持占位符（可选）)";
     help.ruleExample = R"(转发规则示例：
 {
@@ -230,9 +201,8 @@ PushChannelHelp FeishuBotChannel::getHelp() const {
   "pushType": "feishu_bot",
   "pushConfig": {
     "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx",
-    "message_type": "rich_text",
+    "message_type": "text",
     "secret": "your_secret",
-    "title": "短信通知",
     "message_template": "发送方：{sender}\n内容：{content}"
   }
 })";
@@ -271,8 +241,8 @@ bool FeishuBotChannel::validateConfig(const std::map<String, String>& configMap)
         messageType = configMap.at("message_type");
     }
     
-    if (messageType != "text" && messageType != "rich_text" && messageType != "post") {
-        setError("不支持的消息类型：" + messageType + "，支持：text、rich_text、post");
+    if (messageType != "text") {
+        setError("不支持的消息类型：" + messageType + "，仅支持：text");
         return false;
     }
     
@@ -296,53 +266,7 @@ bool FeishuBotChannel::sendTextMessage(const String& webhookUrl, const String& c
     return sendToFeishu(webhookUrl, messageJson, secret);
 }
 
-/**
- * @brief 发送富文本消息
- * @param webhookUrl Webhook地址
- * @param title 消息标题
- * @param content 消息内容
- * @param secret 签名密钥（可选）
- * @return bool 发送是否成功
- */
-bool FeishuBotChannel::sendRichTextMessage(const String& webhookUrl, const String& title, 
-                                         const String& content, const String& secret) {
-    if (title.length() > FEISHU_TITLE_MAX_LENGTH) {
-        setError("标题超过最大长度限制（" + String(FEISHU_TITLE_MAX_LENGTH) + "字符）");
-        return false;
-    }
-    
-    if (content.length() > FEISHU_MESSAGE_MAX_LENGTH) {
-        setError("消息内容超过最大长度限制（" + String(FEISHU_MESSAGE_MAX_LENGTH) + "字符）");
-        return false;
-    }
-    
-    String messageJson = buildRichTextMessageJson(title, content);
-    return sendToFeishu(webhookUrl, messageJson, secret);
-}
 
-/**
- * @brief 发送消息卡片
- * @param webhookUrl Webhook地址
- * @param title 卡片标题
- * @param content 卡片内容
- * @param secret 签名密钥（可选）
- * @return bool 发送是否成功
- */
-bool FeishuBotChannel::sendPostMessage(const String& webhookUrl, const String& title, 
-                                     const String& content, const String& secret) {
-    if (title.length() > FEISHU_TITLE_MAX_LENGTH) {
-        setError("标题超过最大长度限制（" + String(FEISHU_TITLE_MAX_LENGTH) + "字符）");
-        return false;
-    }
-    
-    if (content.length() > FEISHU_MESSAGE_MAX_LENGTH) {
-        setError("消息内容超过最大长度限制（" + String(FEISHU_MESSAGE_MAX_LENGTH) + "字符）");
-        return false;
-    }
-    
-    String messageJson = buildPostMessageJson(title, content);
-    return sendToFeishu(webhookUrl, messageJson, secret);
-}
 
 /**
  * @brief 生成签名
@@ -351,7 +275,12 @@ bool FeishuBotChannel::sendPostMessage(const String& webhookUrl, const String& t
  * @return String 签名字符串
  */
 String FeishuBotChannel::generateSignature(const String& timestamp, const String& secret) {
-    String stringToSign = timestamp + "\n" + secret;
+    // 根据飞书官方文档：使用 timestamp + "\n" + secret 作为密钥，空字符串作为消息
+    String key = timestamp + "\n" + secret;
+    String message = ""; // 空字符串
+    
+    debugPrint("HMAC密钥: " + key);
+    debugPrint("HMAC消息: [空字符串]");
     
     // 使用HMAC-SHA256生成签名
     unsigned char hmacResult[32];
@@ -360,8 +289,10 @@ String FeishuBotChannel::generateSignature(const String& timestamp, const String
     
     mbedtls_md_init(&ctx);
     mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
-    mbedtls_md_hmac_starts(&ctx, (const unsigned char*)secret.c_str(), secret.length());
-    mbedtls_md_hmac_update(&ctx, (const unsigned char*)stringToSign.c_str(), stringToSign.length());
+    
+    // 使用key作为密钥，空字符串作为消息
+    mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key.c_str(), key.length());
+    mbedtls_md_hmac_update(&ctx, (const unsigned char*)message.c_str(), message.length());
     mbedtls_md_hmac_finish(&ctx, hmacResult);
     mbedtls_md_free(&ctx);
     
@@ -371,10 +302,12 @@ String FeishuBotChannel::generateSignature(const String& timestamp, const String
     
     int ret = mbedtls_base64_encode(base64Buffer, sizeof(base64Buffer), &olen, hmacResult, 32);
     if (ret != 0) {
+        debugPrint("Base64编码失败");
         return ""; // 编码失败
     }
     
     String signature = String((char*)base64Buffer);
+    debugPrint("生成的签名: " + signature);
     return signature;
 }
 
@@ -393,87 +326,7 @@ String FeishuBotChannel::buildTextMessageJson(const String& content) {
     return json;
 }
 
-/**
- * @brief 构建富文本消息JSON
- * @param title 消息标题
- * @param content 消息内容
- * @return String 消息JSON
- */
-String FeishuBotChannel::buildRichTextMessageJson(const String& title, const String& content) {
-    JsonDocument doc;
-    doc["msg_type"] = "rich_text";
-    doc["content"]["rich_text"]["title"] = title;
-    
-    // 将内容按行分割并构建富文本元素
-    JsonArray elements = doc["content"]["rich_text"]["content"].add<JsonArray>();
-    
-    int startPos = 0;
-    int endPos = content.indexOf('\n');
-    
-    while (endPos != -1 || startPos < content.length()) {
-        String line;
-        if (endPos != -1) {
-            line = content.substring(startPos, endPos);
-            startPos = endPos + 1;
-            endPos = content.indexOf('\n', startPos);
-        } else {
-            line = content.substring(startPos);
-            startPos = content.length();
-        }
-        
-        if (!line.isEmpty()) {
-            JsonArray lineElements = elements.add<JsonArray>();
-            JsonObject textElement = lineElements.add<JsonObject>();
-            textElement["tag"] = "text";
-            textElement["text"] = line;
-        }
-    }
-    
-    String json;
-    serializeJson(doc, json);
-    return json;
-}
 
-/**
- * @brief 构建消息卡片JSON
- * @param title 卡片标题
- * @param content 卡片内容
- * @return String 消息JSON
- */
-String FeishuBotChannel::buildPostMessageJson(const String& title, const String& content) {
-    JsonDocument doc;
-    doc["msg_type"] = "post";
-    doc["content"]["post"]["zh_cn"]["title"] = title;
-    
-    // 构建卡片内容
-    JsonArray contentArray = doc["content"]["post"]["zh_cn"]["content"].add<JsonArray>();
-    
-    // 将内容按行分割
-    int startPos = 0;
-    int endPos = content.indexOf('\n');
-    
-    while (endPos != -1 || startPos < content.length()) {
-        String line;
-        if (endPos != -1) {
-            line = content.substring(startPos, endPos);
-            startPos = endPos + 1;
-            endPos = content.indexOf('\n', startPos);
-        } else {
-            line = content.substring(startPos);
-            startPos = content.length();
-        }
-        
-        if (!line.isEmpty()) {
-            JsonObject textElement = contentArray.add<JsonObject>();
-            textElement["tag"] = "text";
-            textElement["text"] = line;
-        }
-    }
-    
-    String json;
-    serializeJson(doc, json);
-    return json;
-}
 
 /**
  * @brief 解析消息类型
@@ -481,13 +334,8 @@ String FeishuBotChannel::buildPostMessageJson(const String& title, const String&
  * @return FeishuMessageType 消息类型
  */
 FeishuMessageType FeishuBotChannel::parseMessageType(const String& typeStr) {
-    if (typeStr.equalsIgnoreCase("rich_text")) {
-        return FEISHU_RICH_TEXT;
-    } else if (typeStr.equalsIgnoreCase("post")) {
-        return FEISHU_POST;
-    } else {
-        return FEISHU_TEXT; // 默认为文本消息
-    }
+    // 只支持文本消息类型
+    return FEISHU_TEXT;
 }
 
 /**
@@ -558,9 +406,12 @@ bool FeishuBotChannel::sendToFeishu(const String& webhookUrl, const String& mess
  * @return String 时间戳字符串
  */
 String FeishuBotChannel::getCurrentTimestamp() {
-    // 使用millis()生成时间戳（秒）
-    unsigned long currentTime = millis() / 1000;
-    return String(currentTime);
+    // 直接使用系统UTC时间戳，确保时间准确性
+    time_t now;
+    time(&now);
+    
+    debugPrint("使用系统UTC时间戳: " + String(now));
+    return String(now);
 }
 
 /**

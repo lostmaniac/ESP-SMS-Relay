@@ -9,7 +9,10 @@
 #include "../database_manager/database_manager.h"
 #include "../log_manager/log_manager.h"
 #include "../push_manager/push_manager.h"
+#include "../gsm_service/gsm_service.h"
 #include <regex>
+#include <time.h>
+#include <sys/time.h>
 
 // 默认配置
 const TerminalConfig TerminalManager::DEFAULT_CONFIG = {
@@ -406,10 +409,14 @@ bool TerminalManager::processCommand(const String& command) {
         executeTestCommand(args);
     } else if (cmd == "status" || cmd == "stat") {
         executeStatusCommand(args);
+    } else if (cmd == "synctime" || cmd == "time") {
+        executeSyncTimeCommand(args);
     } else if (cmd == "import") {
         executeImportCommand(args);
     } else if (cmd == "export") {
         executeExportCommand(args);
+    } else if (cmd == "at") {
+        executeAtCommand(args);
     } else if (cmd == "exit" || cmd == "quit" || cmd == "q") {
         stopCLI();
         return false;
@@ -785,6 +792,7 @@ void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
     Serial.println("通用命令:");
     Serial.println("  help, h [渠道名]           - 显示帮助信息，可指定渠道查看详细配置");
     Serial.println("  status, stat               - 显示系统状态");
+    Serial.println("  synctime, time [sync|set]  - 网络时间同步测试");
     Serial.println("  clear, cls                 - 清屏");
     Serial.println("  exit, quit, q              - 退出CLI");
     Serial.println();
@@ -799,6 +807,9 @@ void TerminalManager::executeHelpCommand(const std::vector<String>& args) {
     Serial.println("数据管理:");
     Serial.println("  import                     - 导入规则（交互式）");
     Serial.println("  export                     - 导出所有规则");
+    Serial.println();
+    Serial.println("AT命令:");
+    Serial.println("  at <AT命令>                - AT命令透传到GSM模块");
     Serial.println();
     
     // 显示可用的推送渠道
@@ -1060,6 +1071,71 @@ void TerminalManager::executeStatusCommand(const std::vector<String>& args) {
     Serial.println("  缓存启用: " + String(config.enableCache ? "是" : "否"));
     Serial.println("  验证启用: " + String(config.enableValidation ? "是" : "否"));
     Serial.println("  日志启用: " + String(config.enableLogging ? "是" : "否"));
+}
+
+void TerminalManager::executeSyncTimeCommand(const std::vector<String>& args) {
+    Serial.println("\n=== 网络时间同步测试 ===");
+    
+    // 获取GSM服务实例
+    GsmService& gsmService = GsmService::getInstance();
+    
+    // 显示当前系统时间
+    time_t now;
+    time(&now);
+    struct tm* timeinfo = localtime(&now);
+    char currentTimeStr[64];
+    strftime(currentTimeStr, sizeof(currentTimeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+    Serial.println("当前系统时间: " + String(currentTimeStr));
+    
+    // 尝试获取网络时间字符串
+    Serial.println("\n正在获取网络时间...");
+    String networkTimeStr = gsmService.getNetworkTime();
+    if (networkTimeStr.isEmpty()) {
+        Serial.println("❌ 获取网络时间失败: " + gsmService.getLastError());
+        return;
+    }
+    
+    Serial.println("网络时间字符串: " + networkTimeStr);
+    
+    // 尝试获取Unix时间戳
+    unsigned long networkTimestamp = gsmService.getUnixTimestamp();
+    if (networkTimestamp == 0) {
+        Serial.println("❌ 解析网络时间戳失败");
+        return;
+    }
+    
+    Serial.println("网络时间戳: " + String(networkTimestamp));
+    
+    // 转换时间戳为可读格式
+    time_t networkTime = networkTimestamp;
+    struct tm* networkTimeInfo = localtime(&networkTime);
+    char networkTimeFormatted[64];
+    strftime(networkTimeFormatted, sizeof(networkTimeFormatted), "%Y-%m-%d %H:%M:%S", networkTimeInfo);
+    Serial.println("网络时间格式化: " + String(networkTimeFormatted));
+    
+    // 检查是否需要同步时间
+    if (args.size() > 0 && (args[0] == "sync" || args[0] == "set")) {
+        Serial.println("\n正在同步系统时间...");
+        
+        // 设置系统时间
+        struct timeval tv;
+        tv.tv_sec = networkTimestamp;
+        tv.tv_usec = 0;
+        
+        if (settimeofday(&tv, NULL) == 0) {
+            Serial.println("✓ 系统时间同步成功");
+            
+            // 验证时间设置
+            time(&now);
+            timeinfo = localtime(&now);
+            strftime(currentTimeStr, sizeof(currentTimeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+            Serial.println("新的系统时间: " + String(currentTimeStr));
+        } else {
+            Serial.println("❌ 设置系统时间失败");
+        }
+    } else {
+        Serial.println("\n💡 提示: 使用 'synctime sync' 或 'time set' 来同步系统时间");
+    }
 }
 
 void TerminalManager::executeImportCommand(const std::vector<String>& args) {
@@ -1355,4 +1431,39 @@ String TerminalManager::getLastError() {
     }
     
     return "无错误";
+}
+
+void TerminalManager::executeAtCommand(const std::vector<String>& args) {
+    if (args.size() < 1) {
+        Serial.println("用法: at <AT命令>");
+        Serial.println("示例: at AT+CSQ");
+        Serial.println("      at AT+CPIN?");
+        Serial.println("      at AT+COPS?");
+        return;
+    }
+    
+    // 重新构建AT命令
+    String atCommand = args[0];
+    for (size_t i = 1; i < args.size(); i++) {
+        atCommand += " " + args[i];
+    }
+    
+    Serial.println("发送AT命令: " + atCommand);
+    
+    // 获取GSM服务实例
+    GsmService& gsmService = GsmService::getInstance();
+    
+    // 发送AT命令并获取响应
+     String response = gsmService.sendAtCommandWithResponse(atCommand);
+    
+    if (response.isEmpty()) {
+        Serial.println("❌ AT命令执行失败或无响应");
+        String error = gsmService.getLastError();
+        if (!error.isEmpty()) {
+            Serial.println("错误信息: " + error);
+        }
+    } else {
+        Serial.println("📡 AT命令响应:");
+        Serial.println(response);
+    }
 }

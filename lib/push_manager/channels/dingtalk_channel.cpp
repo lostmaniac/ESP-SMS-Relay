@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 #include <mbedtls/md.h>
 #include <base64.h>
+#include <time.h>
 
 /**
  * @brief 构造函数
@@ -59,7 +60,7 @@ PushResult DingtalkChannel::push(const String& config, const PushContext& contex
     
     // 如果配置了secret，需要生成签名
     if (!secret.isEmpty()) {
-        String timestamp = String(millis());
+        String timestamp = String(time(nullptr) * 1000); // 使用Unix时间戳（毫秒）
         String sign = generateSign(timestamp, secret);
         
         // 添加签名参数到URL

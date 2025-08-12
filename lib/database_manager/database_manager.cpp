@@ -530,6 +530,62 @@ ForwardRule DatabaseManager::getForwardRuleById(int ruleId) {
 }
 
 /**
+ * @brief 获取转发规则总数
+ * @return int 规则总数
+ */
+int DatabaseManager::getForwardRuleCount() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return 0;
+    }
+    
+    const char* sql = "SELECT COUNT(*) FROM forward_rules";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return 0;
+    }
+    
+    int count = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+/**
+ * @brief 获取启用的转发规则数量
+ * @return int 启用的规则数量
+ */
+int DatabaseManager::getEnabledForwardRuleCount() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return 0;
+    }
+    
+    const char* sql = "SELECT COUNT(*) FROM forward_rules WHERE enabled = 1";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return 0;
+    }
+    
+    int count = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+/**
  * @brief 添加短信记录
  * @param record 短信记录
  * @return int 记录ID，-1表示失败
@@ -966,44 +1022,4 @@ String DatabaseManager::getCurrentTimestamp() {
     // 在实际应用中，可以使用RTC或NTP时间
     unsigned long currentTime = millis();
     return String(currentTime);
-}
-
-/**
- * @brief 转义字符串中的特殊字符，防止SQL注入
- * @param str 需要转义的字符串
- * @return 转义后的字符串
- */
-String DatabaseManager::escapeString(const String& str) {
-    String escaped = "";
-    for (int i = 0; i < str.length(); i++) {
-        char c = str.charAt(i);
-        switch (c) {
-            case '\'':
-                // 单引号转义为两个单引号（SQLite标准）
-                escaped += "\'\'";
-                break;
-            case '\\':
-                // 反斜杠转义
-                escaped += "\\\\";
-                break;
-            case '\n':
-                // 换行符转义
-                escaped += "\\n";
-                break;
-            case '\r':
-                // 回车符转义
-                escaped += "\\r";
-                break;
-            case '\t':
-                // 制表符转义
-                escaped += "\\t";
-                break;
-            default:
-                // 其他字符直接添加，不对双引号进行转义
-                // 因为JSON字符串中的双引号已经在命令解析阶段正确处理
-                escaped += c;
-                break;
-        }
-    }
-    return escaped;
 }

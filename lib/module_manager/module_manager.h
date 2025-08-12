@@ -17,9 +17,7 @@
 #include <Arduino.h>
 
 // 前向声明
-class SmsSender;
 class PhoneCaller;
-class SmsHandler;
 class HttpClient;
 class AtCommandHandler;
 
@@ -43,9 +41,7 @@ enum ModuleType {
     MODULE_GSM_BASIC,       ///< GSM基础模块
     MODULE_AT_COMMAND,      ///< AT命令处理模块
     MODULE_HTTP_CLIENT,     ///< HTTP客户端模块
-    MODULE_SMS_SENDER,      ///< 短信发送模块
     MODULE_PHONE_CALLER,    ///< 电话拨打模块
-    MODULE_SMS_HANDLER,     ///< 短信处理模块
     MODULE_UART_MONITOR,    ///< 串口监听模块
     MODULE_COUNT            ///< 模块总数
 };
@@ -136,25 +132,11 @@ private:
     bool initGsmBasicModule();
     
     /**
-     * @brief 初始化短信发送模块
-     * @return true 初始化成功
-     * @return false 初始化失败
-     */
-    bool initSmsSenderModule();
-    
-    /**
      * @brief 初始化电话拨打模块
      * @return true 初始化成功
      * @return false 初始化失败
      */
     bool initPhoneCallerModule();
-    
-    /**
-     * @brief 初始化短信处理模块
-     * @return true 初始化成功
-     * @return false 初始化失败
-     */
-    bool initSmsHandlerModule();
     
     /**
      * @brief 初始化AT命令处理模块
@@ -193,22 +175,10 @@ private:
 
 // 全局访问函数声明
 /**
- * @brief 获取短信发送器实例
- * @return SmsSender* 短信发送器指针，如果未初始化则返回nullptr
- */
-SmsSender* getSmsSender();
-
-/**
  * @brief 获取电话拨打器实例
  * @return PhoneCaller* 电话拨打器指针，如果未初始化则返回nullptr
  */
 PhoneCaller* getPhoneCaller();
-
-/**
- * @brief 获取短信处理器实例
- * @return SmsHandler* 短信处理器指针，如果未初始化则返回nullptr
- */
-SmsHandler* getSmsHandler();
 
 /**
  * @brief 获取HTTP客户端实例

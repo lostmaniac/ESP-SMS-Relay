@@ -14,7 +14,10 @@
 #include "config_manager.h"
 #include "config.h"
 #include "../sms_handler/sms_handler.h"
+#include "log_manager.h"
 #include <Arduino.h>
+#include <sys/time.h>
+#include <time.h>
 
 // 前向声明以避免重复包含pdulib.h
 class SmsSender;
@@ -23,9 +26,7 @@ class SmsSender;
 extern HardwareSerial simSerial;
 
 // 全局模块实例
-static SmsSender* g_sms_sender = nullptr;
 static PhoneCaller* g_phone_caller = nullptr;
-static SmsHandler* g_sms_handler = nullptr;
 static AtCommandHandler* g_at_command_handler = nullptr;
 static HttpClient* g_http_client = nullptr;
 
@@ -45,17 +46,9 @@ ModuleManager::ModuleManager() : initialized(false) {
  */
 ModuleManager::~ModuleManager() {
     // 清理资源
-    if (g_sms_sender) {
-        delete g_sms_sender;
-        g_sms_sender = nullptr;
-    }
     if (g_phone_caller) {
         delete g_phone_caller;
         g_phone_caller = nullptr;
-    }
-    if (g_sms_handler) {
-        delete g_sms_handler;
-        g_sms_handler = nullptr;
     }
     if (g_at_command_handler) {
         delete g_at_command_handler;
@@ -112,18 +105,8 @@ bool ModuleManager::initializeAllModules() {
         return false;
     }
     
-    if (!initializeModule(MODULE_SMS_SENDER)) {
-        setError("短信发送模块初始化失败");
-        return false;
-    }
-    
     if (!initializeModule(MODULE_PHONE_CALLER)) {
         setError("电话拨打模块初始化失败");
-        return false;
-    }
-    
-    if (!initializeModule(MODULE_SMS_HANDLER)) {
-        setError("短信处理模块初始化失败");
         return false;
     }
     
@@ -156,14 +139,8 @@ bool ModuleManager::initializeModule(ModuleType moduleType) {
         case MODULE_HTTP_CLIENT:
             result = initHttpClientModule();
             break;
-        case MODULE_SMS_SENDER:
-            result = initSmsSenderModule();
-            break;
         case MODULE_PHONE_CALLER:
             result = initPhoneCallerModule();
-            break;
-        case MODULE_SMS_HANDLER:
-            result = initSmsHandlerModule();
             break;
         case MODULE_UART_MONITOR:
             result = initUartMonitorModule();
@@ -224,6 +201,32 @@ bool ModuleManager::initGsmBasicModule() {
         return false;
     }
     
+    // GSM服务初始化成功后，尝试同步网络时间
+    LOG_INFO(LOG_MODULE_SYSTEM, "正在同步网络时间...");
+    unsigned long networkTimestamp = gsmService.getUnixTimestamp();
+    if (networkTimestamp > 0) {
+        // 设置系统时间（ESP32使用settimeofday函数）
+        struct timeval tv;
+        tv.tv_sec = networkTimestamp;
+        tv.tv_usec = 0;
+        
+        if (settimeofday(&tv, NULL) == 0) {
+            LOG_INFO(LOG_MODULE_SYSTEM, "网络时间同步成功，时间戳: " + String(networkTimestamp));
+            
+            // 验证时间设置
+            time_t now;
+            time(&now);
+            struct tm* timeinfo = localtime(&now);
+            char timeStr[64];
+            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+            LOG_INFO(LOG_MODULE_SYSTEM, "当前系统时间: " + String(timeStr));
+        } else {
+            LOG_WARN(LOG_MODULE_SYSTEM, "设置系统时间失败");
+        }
+    } else {
+        LOG_WARN(LOG_MODULE_SYSTEM, "获取网络时间失败，将使用系统默认时间");
+    }
+    
     return true;
 }
 
@@ -259,19 +262,7 @@ bool ModuleManager::initHttpClientModule() {
     return true;
 }
 
-/**
- * @brief 初始化短信发送模块
- * @return true 初始化成功
- * @return false 初始化失败
- */
-bool ModuleManager::initSmsSenderModule() {
-    // 初始化短信发送模块
-    
-    // 暂时跳过SmsSender初始化以避免头文件冲突
-    // TODO: 重构SmsSender以避免与SmsHandler的pdulib冲突
-    
-    return true;
-}
+
 
 /**
  * @brief 初始化电话拨打模块
@@ -293,19 +284,7 @@ bool ModuleManager::initPhoneCallerModule() {
     return true;
 }
 
-/**
- * @brief 初始化短信处理模块
- * @return true 初始化成功
- * @return false 初始化失败
- */
-bool ModuleManager::initSmsHandlerModule() {
-    // 初始化短信处理模块
-    
-    // 暂时跳过SmsHandler初始化以避免头文件冲突
-    // TODO: 重构SmsHandler以避免与SmsSender的pdulib冲突
-    
-    return true;
-}
+
 
 /**
  * @brief 初始化串口监听模块
@@ -409,13 +388,7 @@ void ModuleManager::setError(const String& error) {
 
 // 全局访问函数
 
-/**
- * @brief 获取短信发送器实例
- * @return SmsSender* 短信发送器指针，如果未初始化则返回nullptr
- */
-SmsSender* getSmsSender() {
-    return g_sms_sender;
-}
+
 
 /**
  * @brief 获取电话拨打器实例
@@ -425,13 +398,7 @@ PhoneCaller* getPhoneCaller() {
     return g_phone_caller;
 }
 
-/**
- * @brief 获取短信处理器实例
- * @return SmsHandler* 短信处理器指针，如果未初始化则返回nullptr
- */
-SmsHandler* getSmsHandler() {
-    return g_sms_handler;
-}
+
 
 /**
  * @brief 获取AT命令处理器实例

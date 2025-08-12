@@ -11,6 +11,7 @@
  */
 
 #include <Arduino.h>
+#include <sys/time.h>
 #include "terminal_manager.h"
 #include "database_manager.h"
 #include "log_manager.h"
@@ -120,6 +121,30 @@ void performStartupCall() {
     if (!gsmService.waitForNetworkRegistration(15000)) {
         Serial.println("⚠️  网络注册超时，跳过开机拨号");
         return;
+    }
+    
+    // GSM服务初始化成功后，尝试同步网络时间
+    Serial.println("🕐 开始同步网络时间...");
+    time_t networkTime = gsmService.getUnixTimestamp();
+    if (networkTime > 0) {
+        struct timeval tv;
+        tv.tv_sec = networkTime;
+        tv.tv_usec = 0;
+        
+        if (settimeofday(&tv, NULL) == 0) {
+            Serial.println("✅ 网络时间同步成功");
+            
+            // 显示当前系统时间
+            struct tm timeinfo;
+            localtime_r(&networkTime, &timeinfo);
+            char timeStr[64];
+            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+            Serial.println("📅 当前系统时间: " + String(timeStr));
+        } else {
+            Serial.println("❌ 设置系统时间失败");
+        }
+    } else {
+        Serial.println("⚠️  获取网络时间失败: " + gsmService.getLastError());
     }
     
     // 获取IMSI号码

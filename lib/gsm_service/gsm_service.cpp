@@ -10,6 +10,7 @@
 #include "log_manager.h"
 #include "../../include/config.h"
 #include <Arduino.h>
+#include <time.h>
 
 // 外部串口对象
 extern HardwareSerial simSerial;
@@ -651,4 +652,165 @@ String GsmService::waitForResponse(unsigned long timeout) {
     }
     
     return response;
+}
+
+/**
+ * @brief 获取网络时间
+ * @return String 网络时间字符串，格式为"YY/MM/DD,HH:MM:SS+TZ"，失败返回空字符串
+ */
+String GsmService::getNetworkTime() {
+    Serial.println("正在获取网络时间...");
+    
+    // 发送AT+CCLK?命令获取时钟
+    String response = sendAtCommandWithResponse("AT+CCLK?", 5000);
+    
+    if (response.length() == 0) {
+        setError("获取网络时间超时");
+        return "";
+    }
+    
+    // 解析响应: +CCLK: "YY/MM/DD,HH:MM:SS+TZ"
+    int cclkIndex = response.indexOf("+CCLK:");
+    if (cclkIndex != -1) {
+        int firstQuote = response.indexOf('"', cclkIndex);
+        if (firstQuote != -1) {
+            int secondQuote = response.indexOf('"', firstQuote + 1);
+            if (secondQuote != -1) {
+                String timeStr = response.substring(firstQuote + 1, secondQuote);
+                Serial.printf("获取到网络时间: %s\n", timeStr.c_str());
+                return timeStr;
+            }
+        }
+    }
+    
+    setError("解析网络时间响应失败: " + response);
+    return "";
+}
+
+/**
+ * @brief 获取Unix时间戳
+ * @return unsigned long Unix时间戳，失败返回0
+ */
+unsigned long GsmService::getUnixTimestamp() {
+    String networkTime = getNetworkTime();
+    if (networkTime.length() == 0) {
+        return 0;
+    }
+    
+    // 解析时间字符串: "YY/MM/DD,HH:MM:SS+TZ"
+    // 格式示例: "24/12/20,10:30:45+32"
+    
+    int commaIndex = networkTime.indexOf(',');
+    if (commaIndex == -1) {
+        setError("时间格式错误: " + networkTime);
+        return 0;
+    }
+    
+    String dateStr = networkTime.substring(0, commaIndex);  // "YY/MM/DD"
+    String timeStr = networkTime.substring(commaIndex + 1); // "HH:MM:SS+TZ"
+    
+    // 解析日期部分
+    int firstSlash = dateStr.indexOf('/');
+    int secondSlash = dateStr.indexOf('/', firstSlash + 1);
+    if (firstSlash == -1 || secondSlash == -1) {
+        setError("日期格式错误: " + dateStr);
+        return 0;
+    }
+    
+    int year = dateStr.substring(0, firstSlash).toInt() + 2000; // YY -> YYYY
+    int month = dateStr.substring(firstSlash + 1, secondSlash).toInt();
+    int day = dateStr.substring(secondSlash + 1).toInt();
+    
+    // 解析时间部分和时区
+    int plusIndex = timeStr.indexOf('+');
+    int minusIndex = timeStr.indexOf('-');
+    int tzIndex = (plusIndex != -1) ? plusIndex : minusIndex;
+    
+    String pureTimeStr = (tzIndex != -1) ? timeStr.substring(0, tzIndex) : timeStr;
+    
+    // 解析时区偏移（单位：15分钟）
+    int timezoneOffset = 0; // 以秒为单位
+    if (tzIndex != -1) {
+        String tzStr = timeStr.substring(tzIndex + 1);
+        int tzValue = tzStr.toInt();
+        // 时区值是以15分钟为单位的，例如+32表示+8小时（32*15分钟=480分钟=8小时）
+        timezoneOffset = tzValue * 15 * 60; // 转换为秒
+        if (timeStr.charAt(tzIndex) == '-') {
+            timezoneOffset = -timezoneOffset;
+        }
+        Serial.printf("解析时区偏移: %s -> %d秒 (%.1f小时)\n", 
+                     timeStr.substring(tzIndex).c_str(), 
+                     timezoneOffset, 
+                     timezoneOffset / 3600.0);
+    }
+    
+    int firstColon = pureTimeStr.indexOf(':');
+    int secondColon = pureTimeStr.indexOf(':', firstColon + 1);
+    if (firstColon == -1 || secondColon == -1) {
+        setError("时间格式错误: " + pureTimeStr);
+        return 0;
+    }
+    
+    int hour = pureTimeStr.substring(0, firstColon).toInt();
+    int minute = pureTimeStr.substring(firstColon + 1, secondColon).toInt();
+    int second = pureTimeStr.substring(secondColon + 1).toInt();
+    
+    // 使用C标准库的时间处理函数
+    struct tm timeinfo;
+    memset(&timeinfo, 0, sizeof(timeinfo));
+    
+    // 设置时间结构体
+    timeinfo.tm_year = year - 1900;  // tm_year是从1900年开始的年数
+    timeinfo.tm_mon = month - 1;     // tm_mon是0-11（0表示1月）
+    timeinfo.tm_mday = day;          // 日期
+    timeinfo.tm_hour = hour;         // 小时
+    timeinfo.tm_min = minute;        // 分钟
+    timeinfo.tm_sec = second;        // 秒
+    timeinfo.tm_isdst = -1;          // 让系统自动判断夏令时
+    
+    // 网络时间是本地时间，需要转换为UTC时间戳
+    // 首先减去时区偏移得到UTC时间
+    timeinfo.tm_hour -= (timezoneOffset / 3600);
+    timeinfo.tm_min -= ((timezoneOffset % 3600) / 60);
+    
+    // 处理小时和分钟的溢出
+    if (timeinfo.tm_min < 0) {
+        timeinfo.tm_min += 60;
+        timeinfo.tm_hour -= 1;
+    }
+    if (timeinfo.tm_hour < 0) {
+        timeinfo.tm_hour += 24;
+        timeinfo.tm_mday -= 1;
+        if (timeinfo.tm_mday <= 0) {
+            timeinfo.tm_mon -= 1;
+            if (timeinfo.tm_mon < 0) {
+                timeinfo.tm_mon = 11;
+                timeinfo.tm_year -= 1;
+            }
+            // 简化处理：假设每月30天（实际应用中可以更精确）
+            timeinfo.tm_mday = 30;
+        }
+    }
+    
+    // 使用timegm转换为UTC时间戳（如果可用），否则使用mktime并手动调整
+    #ifdef __GLIBC__
+        time_t utcTimestamp = timegm(&timeinfo);
+    #else
+        // ESP32环境下使用mktime，但设置为UTC时间
+        time_t utcTimestamp = mktime(&timeinfo);
+        // 由于我们已经调整了时区，这里直接使用结果
+    #endif
+    
+    if (utcTimestamp == -1) {
+        setError("时间转换失败");
+        return 0;
+    }
+    
+    Serial.printf("解析时间: %04d-%02d-%02d %02d:%02d:%02d\n", 
+                 year, month, day, hour, minute, second);
+    Serial.printf("UTC时间戳: %lu, 时区偏移: %d秒 (%.1f小时)\n", 
+                 (unsigned long)utcTimestamp, timezoneOffset, timezoneOffset / 3600.0);
+    Serial.printf("UTC时间戳: %lu\n", utcTimestamp);
+    
+    return utcTimestamp;
 }

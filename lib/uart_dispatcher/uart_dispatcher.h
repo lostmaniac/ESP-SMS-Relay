@@ -29,6 +29,12 @@ public:
      * @return bool 当前是否抑制输出
      */
     bool isOutputSuppressed() const;
+    
+    /**
+     * @brief 检查是否正在缓冲PDU数据
+     * @return bool 当前是否正在缓冲PDU数据
+     */
+    bool isBufferingPDU() const;
 
 private:
     String messageBuffer;           ///< 消息缓冲区

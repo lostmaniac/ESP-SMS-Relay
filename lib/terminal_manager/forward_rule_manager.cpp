@@ -477,9 +477,8 @@ int ForwardRuleManager::getRuleCount() {
     
     DatabaseManager& db = DatabaseManager::getInstance();
     
-    // 使用getAllForwardRules获取所有规则，然后返回数量
-    std::vector<ForwardRule> rules = db.getAllForwardRules();
-    return rules.size();
+    // 使用高效的COUNT查询而不是获取所有规则
+    return db.getForwardRuleCount();
 }
 
 int ForwardRuleManager::getEnabledRuleCount() {
@@ -489,15 +488,8 @@ int ForwardRuleManager::getEnabledRuleCount() {
     
     DatabaseManager& db = DatabaseManager::getInstance();
     
-    // 使用getAllForwardRules获取所有规则，然后计算启用的数量
-    std::vector<ForwardRule> rules = db.getAllForwardRules();
-    int enabledCount = 0;
-    for (const ForwardRule& rule : rules) {
-        if (rule.enabled) {
-            enabledCount++;
-        }
-    }
-    return enabledCount;
+    // 使用高效的COUNT查询而不是获取所有规则
+    return db.getEnabledForwardRuleCount();
 }
 
 std::vector<ForwardRule> ForwardRuleManager::getMostUsedRules(int limit) {

@@ -23,9 +23,7 @@
  * @brief 飞书消息类型枚举
  */
 enum FeishuMessageType {
-    FEISHU_TEXT = 0,        ///< 文本消息
-    FEISHU_RICH_TEXT = 1,   ///< 富文本消息
-    FEISHU_POST = 2         ///< 消息卡片
+    FEISHU_TEXT = 0         ///< 文本消息
 };
 
 /**
@@ -33,7 +31,7 @@ enum FeishuMessageType {
  * @brief 飞书机器人推送渠道类
  * 
  * 实现飞书自定义机器人推送功能，支持：
- * - 多种消息类型（文本、富文本、消息卡片）
+ * - 文本消息类型
  * - 签名校验保证安全性
  * - 关键词校验
  * - 消息模板自定义
@@ -125,27 +123,7 @@ private:
      */
     bool sendTextMessage(const String& webhookUrl, const String& content, const String& secret = "");
 
-    /**
-     * @brief 发送富文本消息
-     * @param webhookUrl Webhook地址
-     * @param title 消息标题
-     * @param content 消息内容
-     * @param secret 签名密钥（可选）
-     * @return bool 发送是否成功
-     */
-    bool sendRichTextMessage(const String& webhookUrl, const String& title, 
-                           const String& content, const String& secret = "");
 
-    /**
-     * @brief 发送消息卡片
-     * @param webhookUrl Webhook地址
-     * @param title 卡片标题
-     * @param content 卡片内容
-     * @param secret 签名密钥（可选）
-     * @return bool 发送是否成功
-     */
-    bool sendPostMessage(const String& webhookUrl, const String& title, 
-                        const String& content, const String& secret = "");
 
     /**
      * @brief 生成签名
@@ -162,21 +140,7 @@ private:
      */
     String buildTextMessageJson(const String& content);
 
-    /**
-     * @brief 构建富文本消息JSON
-     * @param title 消息标题
-     * @param content 消息内容
-     * @return String 消息JSON
-     */
-    String buildRichTextMessageJson(const String& title, const String& content);
 
-    /**
-     * @brief 构建消息卡片JSON
-     * @param title 卡片标题
-     * @param content 卡片内容
-     * @return String 消息JSON
-     */
-    String buildPostMessageJson(const String& title, const String& content);
 
     /**
      * @brief 解析消息类型
@@ -209,7 +173,6 @@ private:
 
 private:
     static const int FEISHU_MESSAGE_MAX_LENGTH = 30000; ///< 飞书消息最大长度
-    static const int FEISHU_TITLE_MAX_LENGTH = 100;     ///< 飞书标题最大长度
 };
 
 #endif // FEISHU_BOT_CHANNEL_H

@@ -169,6 +169,18 @@ public:
     void clearSerialBuffer();
     
     /**
+     * @brief 获取网络时间
+     * @return String 网络时间字符串，格式为"YY/MM/DD,HH:MM:SS+TZ"，失败返回空字符串
+     */
+    String getNetworkTime();
+    
+    /**
+     * @brief 获取Unix时间戳
+     * @return unsigned long Unix时间戳，失败返回0
+     */
+    unsigned long getUnixTimestamp();
+    
+    /**
      * @brief 获取单例实例
      * @return GsmService& 单例引用
      */

@@ -342,6 +342,12 @@ private:
     void executeStatusCommand(const std::vector<String>& args);
     
     /**
+     * @brief 执行时间同步命令
+     * @param args 参数列表
+     */
+    void executeSyncTimeCommand(const std::vector<String>& args);
+    
+    /**
      * @brief 执行导入命令
      * @param args 参数列表
      */
@@ -352,6 +358,12 @@ private:
      * @param args 参数列表
      */
     void executeExportCommand(const std::vector<String>& args);
+    
+    /**
+     * @brief 执行AT命令透传
+     * @param args 参数列表
+     */
+    void executeAtCommand(const std::vector<String>& args);
     
     /**
      * @brief 打印命令提示符
