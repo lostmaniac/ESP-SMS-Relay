@@ -159,6 +159,13 @@ public:
      */
     bool refreshRuleCache();
 
+    /**
+     * @brief 加载规则到缓存
+     * @return true 加载成功
+     * @return false 加载失败
+     */
+    bool loadRulesToCache();
+
 private:
     /**
      * @brief 私有构造函数（单例模式）
@@ -242,14 +249,6 @@ private:
      * @param message 调试信息
      */
     void debugPrint(const String& message);
-
-private:
-    /**
-     * @brief 加载规则到缓存
-     * @return true 加载成功
-     * @return false 加载失败
-     */
-    bool loadRulesToCache();
 
 private:
     String lastError;              ///< 最后的错误信息

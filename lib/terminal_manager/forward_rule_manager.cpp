@@ -9,6 +9,7 @@
 #include "database_manager.h"
 #include "log_manager.h"
 #include "../push_manager/push_channel_registry.h"
+#include "../push_manager/push_manager.h"
 #include <ArduinoJson.h>
 #include <regex>
 #include <algorithm>
@@ -102,6 +103,9 @@ int ForwardRuleManager::addRule(const ForwardRule& rule) {
         addToCache(newRule);
     }
     
+    // 刷新推送管理器缓存
+    PushManager::getInstance().refreshRuleCache();
+    
     return ruleId;
 }
 
@@ -164,6 +168,9 @@ bool ForwardRuleManager::deleteRule(int ruleId) {
     if (enableCache) {
         removeFromCache(ruleId);
     }
+    
+    // 刷新推送管理器缓存
+    PushManager::getInstance().refreshRuleCache();
     
     return true;
 }

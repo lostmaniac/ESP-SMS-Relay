@@ -27,7 +27,7 @@ PushManager& PushManager::getInstance() {
  * @brief 构造函数
  */
 PushManager::PushManager() 
-    : debugMode(false), initialized(false), lastRuleUpdate(0) {
+    : debugMode(false), initialized(false), cacheLoaded(false) {
 }
 
 /**
@@ -690,4 +690,52 @@ void PushManager::debugPrint(const String& message) {
     if (debugMode) {
         Serial.println("[PushManager] " + message);
     }
+}
+
+/**
+ * @brief 加载规则到缓存
+ * @return true 加载成功
+ * @return false 加载失败
+ */
+bool PushManager::loadRulesToCache() {
+    if (!initialized) {
+        setError("推送管理器未初始化");
+        return false;
+    }
+    
+    debugPrint("开始加载转发规则到缓存...");
+    
+    // 清空现有缓存
+    cachedRules.clear();
+    
+    // 从数据库获取所有转发规则
+    DatabaseManager& dbManager = DatabaseManager::getInstance();
+    cachedRules = dbManager.getAllForwardRules();
+    
+    debugPrint("成功加载 " + String(cachedRules.size()) + " 条转发规则到缓存");
+    
+    // 标记缓存已加载
+    cacheLoaded = true;
+    
+    return true;
+}
+
+/**
+ * @brief 刷新规则缓存
+ * @return true 刷新成功
+ * @return false 刷新失败
+ */
+bool PushManager::refreshRuleCache() {
+    if (!initialized) {
+        setError("推送管理器未初始化");
+        return false;
+    }
+    
+    debugPrint("刷新转发规则缓存...");
+    
+    // 重置缓存状态
+    cacheLoaded = false;
+    
+    // 重新加载规则
+    return loadRulesToCache();
 }

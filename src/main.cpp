@@ -78,6 +78,13 @@ bool initializeSystem() {
     }
     Serial.println("✓ Push Manager initialized");
     
+    // 加载转发规则到缓存
+    if (!pushManager.loadRulesToCache()) {
+        Serial.println("⚠️  Failed to load rules to cache: " + pushManager.getLastError());
+    } else {
+        Serial.println("✓ Forward rules loaded to cache");
+    }
+    
     // 注意：UART监控任务将在GSM初始化完成后启动
     Serial.println("✓ UART Monitor Task will be started after GSM initialization");
     

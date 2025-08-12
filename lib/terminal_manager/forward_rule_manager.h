@@ -15,6 +15,9 @@
 #include <vector>
 #include "../database_manager/database_manager.h"
 
+// 前向声明
+class PushManager;
+
 /**
  * @struct RuleQueryCondition
  * @brief 规则查询条件
