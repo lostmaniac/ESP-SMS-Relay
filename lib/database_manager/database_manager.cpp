@@ -134,7 +134,34 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
         return false;
     }
     
-    debugPrint("数据库连接成功");
+    debugPrint("数据库连接成功，开始配置SQLite参数");
+    
+    // 配置SQLite以优化ESP32-S3的内存使用
+    // 设置页面大小为1KB（适合ESP32的内存特性）
+    executeSQL("PRAGMA page_size = 1024");
+    
+    // 设置缓存大小（页面数量，1000页 = 1MB缓存）
+    executeSQL("PRAGMA cache_size = 1000");
+    
+    // 设置临时存储为内存模式
+    executeSQL("PRAGMA temp_store = MEMORY");
+    
+    // 设置日志模式为WAL（Write-Ahead Logging）以提高性能
+    executeSQL("PRAGMA journal_mode = WAL");
+    
+    // 设置同步模式为NORMAL（平衡性能和安全性）
+    executeSQL("PRAGMA synchronous = NORMAL");
+    
+    // 设置内存映射大小（限制为256KB以避免PSRAM问题）
+    executeSQL("PRAGMA mmap_size = 262144");
+    
+    // 启用外键约束
+    executeSQL("PRAGMA foreign_keys = ON");
+    
+    // 设置自动清理
+    executeSQL("PRAGMA auto_vacuum = INCREMENTAL");
+    
+    debugPrint("SQLite配置完成");
     dbInfo.isOpen = true;
     dbInfo.dbPath = fullDbPath;
     

@@ -326,25 +326,61 @@ void loop() {
     // 这里可以添加其他系统任务
     // 例如：处理SMS、网络通信、状态监控等
     
-    // 系统心跳日志（每30秒）
+    // 系统心跳日志（每5分钟，减少数据库查询频率）
     static unsigned long lastHeartbeat = 0;
+    static int cachedRuleCount = -1;
+    static int cachedEnabledRuleCount = -1;
     unsigned long currentTime = millis();
     
-    if (currentTime - lastHeartbeat > 30000) {
-        logManager.logInfo(LOG_MODULE_SYSTEM, "System heartbeat - Rules: " + String(terminalManager.getRuleCount()) + 
-                      ", Enabled: " + String(terminalManager.getEnabledRuleCount()) +
-                      ", Free heap: " + String(ESP.getFreeHeap()) + " bytes");
+    if (currentTime - lastHeartbeat > 300000) { // 改为5分钟
+        // 缓存规则数量，避免频繁数据库查询
+        if (cachedRuleCount == -1) {
+            cachedRuleCount = terminalManager.getRuleCount();
+            cachedEnabledRuleCount = terminalManager.getEnabledRuleCount();
+        }
+        
+        size_t freeHeap = ESP.getFreeHeap();
+        size_t freePsram = ESP.getFreePsram();
+        
+        logManager.logInfo(LOG_MODULE_SYSTEM, "System heartbeat - Rules: " + String(cachedRuleCount) + 
+                      ", Enabled: " + String(cachedEnabledRuleCount) +
+                      ", Free heap: " + String(freeHeap) + " bytes" +
+                      ", Free PSRAM: " + String(freePsram) + " bytes");
         lastHeartbeat = currentTime;
+        
+        // 每小时更新一次缓存的规则数量
+        static unsigned long lastRuleCountUpdate = 0;
+        if (currentTime - lastRuleCountUpdate > 3600000) { // 1小时
+            cachedRuleCount = -1; // 重置缓存，下次会重新查询
+            lastRuleCountUpdate = currentTime;
+        }
     }
     
-    // 内存监控和警告
+    // 内存监控和警告（每2分钟检查一次）
     static unsigned long lastMemoryCheck = 0;
-    if (currentTime - lastMemoryCheck > 60000) { // 每分钟检查一次
+    if (currentTime - lastMemoryCheck > 120000) { // 改为2分钟
         size_t freeHeap = ESP.getFreeHeap();
-        if (freeHeap < 10000) { // 小于10KB时发出警告
-            Serial.println("⚠️  Low memory warning: " + String(freeHeap) + " bytes free");
-            logManager.logWarn(LOG_MODULE_SYSTEM, "WARNING: Low memory - " + String(freeHeap) + " bytes free");
+        size_t freePsram = ESP.getFreePsram();
+        
+        // 检查堆内存
+        if (freeHeap < 15000) { // 提高警告阈值到15KB
+            Serial.println("⚠️  Low heap memory warning: " + String(freeHeap) + " bytes free");
+            logManager.logWarn(LOG_MODULE_SYSTEM, "WARNING: Low heap memory - " + String(freeHeap) + " bytes free");
+            
+            // 尝试释放一些内存
+            if (freeHeap < 10000) {
+                Serial.println("🔄 Attempting memory cleanup...");
+                // 强制垃圾回收（如果可用）
+                ESP.restart(); // 极端情况下重启系统
+            }
         }
+        
+        // 检查PSRAM内存
+        if (freePsram < 50000) { // PSRAM警告阈值50KB
+            Serial.println("⚠️  Low PSRAM warning: " + String(freePsram) + " bytes free");
+            logManager.logWarn(LOG_MODULE_SYSTEM, "WARNING: Low PSRAM - " + String(freePsram) + " bytes free");
+        }
+        
         lastMemoryCheck = currentTime;
     }
     
