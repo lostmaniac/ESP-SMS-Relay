@@ -1,0 +1,236 @@
+# ESP-SMS-Relay 自动构建和发布工作流
+# 功能：代码推送后自动编译固件，打tag时发布到release
+
+name: Build and Release ESP32 Firmware
+
+# 触发条件
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+# 环境变量
+env:
+  PLATFORMIO_CORE_DIR: .platformio
+
+jobs:
+  # 构建任务
+  build:
+    name: Build Firmware
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    # 设置Python环境
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    # 缓存PlatformIO
+    - name: Cache PlatformIO
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.platformio
+          .platformio
+        key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
+        restore-keys: |
+          ${{ runner.os }}-platformio-
+    
+    # 安装PlatformIO
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio
+    
+    # 编译固件
+    - name: Build firmware
+      run: |
+        echo "开始编译ESP32-S3固件..."
+        pio run --environment esp32-s3-devkitm-1
+        echo "编译完成！"
+    
+    # 获取版本信息
+    - name: Get version info
+      id: version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/}
+        else
+          VERSION="dev-$(date +'%Y%m%d')-$(echo $GITHUB_SHA | cut -c1-7)"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "构建版本: $VERSION"
+    
+    # 重命名固件文件
+    - name: Rename firmware files
+      run: |
+        cd .pio/build/esp32-s3-devkitm-1/
+        cp firmware.bin esp-sms-relay-${{ steps.version.outputs.version }}.bin
+        cp firmware.elf esp-sms-relay-${{ steps.version.outputs.version }}.elf
+        ls -la *.bin *.elf
+    
+    # 生成构建信息
+    - name: Generate build info
+      run: |
+        echo "# ESP-SMS-Relay 构建信息" > build-info.txt
+        echo "" >> build-info.txt
+        echo "**版本**: ${{ steps.version.outputs.version }}" >> build-info.txt
+        echo "**构建时间**: $(date +'%Y-%m-%d %H:%M:%S UTC')" >> build-info.txt
+        echo "**提交哈希**: $GITHUB_SHA" >> build-info.txt
+        echo "**分支**: ${GITHUB_REF#refs/heads/}" >> build-info.txt
+        echo "" >> build-info.txt
+        echo "## 固件文件" >> build-info.txt
+        echo "- \`esp-sms-relay-${{ steps.version.outputs.version }}.bin\` - 主固件文件" >> build-info.txt
+        echo "- \`esp-sms-relay-${{ steps.version.outputs.version }}.elf\` - 调试符号文件" >> build-info.txt
+        echo "" >> build-info.txt
+        echo "## 硬件支持" >> build-info.txt
+        echo "- ESP32-S3 开发板" >> build-info.txt
+        echo "- 微雪 ESP32-S3-A7670E-4G 开发板（推荐）" >> build-info.txt
+        echo "" >> build-info.txt
+        echo "## 烧录说明" >> build-info.txt
+        echo "使用 esptool 或 PlatformIO 烧录固件到 ESP32-S3 设备" >> build-info.txt
+    
+    # 上传构建产物
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: esp-sms-relay-firmware-${{ steps.version.outputs.version }}
+        path: |
+          .pio/build/esp32-s3-devkitm-1/esp-sms-relay-*.bin
+          .pio/build/esp32-s3-devkitm-1/esp-sms-relay-*.elf
+          build-info.txt
+        retention-days: 30
+    
+    # 输出构建结果
+    - name: Build summary
+      run: |
+        echo "✅ 固件编译成功！"
+        echo "📦 版本: ${{ steps.version.outputs.version }}"
+        echo "📁 构建产物已上传到 Artifacts"
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          echo "🏷️ 检测到标签，将创建 Release"
+        fi
+
+  # 发布任务（仅在打tag时执行）
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    # 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    # 获取版本信息
+    - name: Get version info
+      id: version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "发布版本: $VERSION"
+    
+    # 下载构建产物
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: esp-sms-relay-firmware-${{ steps.version.outputs.version }}
+        path: ./artifacts
+    
+    # 生成发布说明
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        echo "# ESP-SMS-Relay ${{ steps.version.outputs.version }}" > release-notes.md
+        echo "" >> release-notes.md
+        echo "## 🚀 新版本发布" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "这是 ESP-SMS-Relay 项目的 ${{ steps.version.outputs.version }} 版本发布。" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## 📦 下载文件" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "- **esp-sms-relay-${{ steps.version.outputs.version }}.bin** - 主固件文件（用于烧录）" >> release-notes.md
+        echo "- **esp-sms-relay-${{ steps.version.outputs.version }}.elf** - 调试符号文件（用于调试）" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## 🔧 安装说明" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "1. 下载 \`.bin\` 固件文件" >> release-notes.md
+        echo "2. 使用 esptool 或 PlatformIO 烧录到 ESP32-S3 设备" >> release-notes.md
+        echo "3. 参考项目 README 进行配置" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## 🛠️ 硬件支持" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "- ESP32-S3 系列开发板" >> release-notes.md
+        echo "- 微雪 ESP32-S3-A7670E-4G 开发板（推荐）" >> release-notes.md
+        echo "- 支持太阳能供电系统" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## 📋 主要功能" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "- 📱 SMS 接收和转发" >> release-notes.md
+        echo "- 🤖 多平台机器人支持（企业微信、钉钉、飞书）" >> release-notes.md
+        echo "- 🌐 Web 管理界面" >> release-notes.md
+        echo "- 🔋 太阳能供电支持" >> release-notes.md
+        echo "- 📊 数据库管理" >> release-notes.md
+        echo "- 🔒 权限隔离管理" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "---" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "**构建时间**: $(date +'%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
+        echo "**提交哈希**: $GITHUB_SHA" >> release-notes.md
+    
+    # 创建Release
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        name: ESP-SMS-Relay ${{ steps.version.outputs.version }}
+        body_path: release-notes.md
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
+        files: |
+          artifacts/esp-sms-relay-*.bin
+          artifacts/esp-sms-relay-*.elf
+          artifacts/build-info.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    # 发布成功通知
+    - name: Release success
+      run: |
+        echo "🎉 Release 创建成功！"
+        echo "📋 版本: ${{ steps.version.outputs.version }}"
+        echo "🔗 查看: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
+
+  # 通知任务（可选）
+  notify:
+    name: Build Notification
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: always()
+    
+    steps:
+    - name: Build status notification
+      run: |
+        if [[ "${{ needs.build.result }}" == "success" ]]; then
+          echo "✅ ESP-SMS-Relay 固件构建成功"
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "🏷️ 标签构建，Release 将自动创建"
+          else
+            echo "🔄 开发构建，固件已上传到 Artifacts"
+          fi
+        else
+          echo "❌ ESP-SMS-Relay 固件构建失败"
+          echo "请检查构建日志以获取详细信息"
+        fi

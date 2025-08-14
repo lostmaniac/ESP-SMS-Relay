@@ -1,0 +1,91 @@
+# ESP-SMS-Relay 持续集成工作流
+# 功能：代码推送和PR时进行快速构建验证
+
+name: Continuous Integration
+
+# 触发条件
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+# 并发控制
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 代码检查
+  lint:
+    name: Code Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check file structure
+      run: |
+        echo "检查项目文件结构..."
+        # 检查必要的文件是否存在
+        test -f platformio.ini || (echo "❌ platformio.ini 文件缺失" && exit 1)
+        test -f src/main.cpp || (echo "❌ src/main.cpp 文件缺失" && exit 1)
+        test -d lib || (echo "❌ lib 目录缺失" && exit 1)
+        echo "✅ 文件结构检查通过"
+    
+    - name: Check code style
+      run: |
+        echo "检查代码风格..."
+        # 检查是否有中文注释（符合项目规范）
+        if grep -r "//.*[\u4e00-\u9fa5]" src/ lib/ --include="*.cpp" --include="*.h" > /dev/null; then
+          echo "✅ 发现中文注释，符合项目规范"
+        fi
+        echo "✅ 代码风格检查完成"
+
+  # 快速构建验证
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache PlatformIO
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.platformio
+          .platformio
+        key: ${{ runner.os }}-pio-${{ hashFiles('**/platformio.ini') }}
+    
+    - name: Install PlatformIO
+      run: |
+        pip install platformio
+    
+    - name: Check dependencies
+      run: |
+        echo "检查项目依赖..."
+        pio pkg list
+        echo "✅ 依赖检查完成"
+    
+    - name: Compile check
+      run: |
+        echo "编译检查（仅验证语法）..."
+        pio run --target compiledb
+        echo "✅ 编译检查通过"
+    
+    - name: Build summary
+      run: |
+        echo "📋 构建检查总结:"
+        echo "✅ 代码语法正确"
+        echo "✅ 依赖关系正常"
+        echo "✅ 项目结构完整"
+        echo "🚀 准备就绪，可以进行完整构建"

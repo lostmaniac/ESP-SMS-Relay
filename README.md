@@ -1,5 +1,13 @@
 # ESP-SMS-Relay 项目
 
+[![Build and Release](https://github.com/your-username/ESP-SMS-Relay/workflows/Build%20and%20Release%20ESP32%20Firmware/badge.svg)](https://github.com/your-username/ESP-SMS-Relay/actions/workflows/build-and-release.yml)
+[![CI Status](https://github.com/your-username/ESP-SMS-Relay/workflows/Continuous%20Integration/badge.svg)](https://github.com/your-username/ESP-SMS-Relay/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/your-username/ESP-SMS-Relay)](https://github.com/your-username/ESP-SMS-Relay/releases)
+[![License](https://img.shields.io/github/license/your-username/ESP-SMS-Relay)](LICENSE)
+
+> **🚀 自动构建**: 代码推送后自动编译固件，打tag自动发布到Release  
+> **📦 即用固件**: 在 [Releases](https://github.com/your-username/ESP-SMS-Relay/releases) 页面下载最新编译好的固件
+
 ## 项目概述
 
 ESP-SMS-Relay 是一个基于 ESP32-S3 的智能短信中继系统，具备短信接收、转发、数据库管理、多平台推送等功能。系统采用模块化架构设计，支持企业微信、钉钉、自定义Webhook等多种推送方式，并提供完整的Web管理界面和CLI终端管理功能。
@@ -669,6 +677,79 @@ pio device monitor | grep "[DATABASE]"
 # 保存日志到文件
 pio device monitor > debug.log
 ```
+
+## 🔄 CI/CD 自动构建和发布
+
+本项目配置了完整的 GitHub Actions 工作流，支持自动构建和发布功能。
+
+### 🚀 自动构建
+
+#### 触发条件
+- **代码推送**: 推送到 `main`、`develop` 分支时自动构建
+- **拉取请求**: 创建或更新 PR 时进行代码检查和构建验证
+- **标签发布**: 创建标签时自动构建并发布到 Release
+
+#### 构建产物
+- **固件文件**: `esp-sms-relay-{version}.bin`
+- **构建信息**: `build-info.txt` (包含版本、时间、提交信息)
+- **分区表**: `partitions.csv`
+- **引导程序**: `bootloader.bin`
+
+### 📦 自动发布
+
+#### 版本发布流程
+1. **开发完成**: 在 `develop` 分支完成功能开发
+2. **合并主分支**: 将 `develop` 合并到 `main` 分支
+3. **创建标签**: 使用语义化版本号创建标签
+   ```bash
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+4. **自动发布**: GitHub Actions 自动创建 Release 并上传固件
+
+#### 版本命名规范
+- **正式版本**: `v1.0.0`、`v1.1.0`、`v2.0.0`
+- **预发布版本**: `v1.0.0-beta.1`、`v1.0.0-rc.1`
+- **修复版本**: `v1.0.1`、`v1.0.2`
+
+### 🔧 工作流配置
+
+#### 持续集成 (CI)
+- **文件**: `.github/workflows/ci.yml`
+- **功能**: 代码检查、语法验证、快速构建
+- **触发**: 推送到 `main`、`develop`、`feature/*` 分支或创建 PR
+
+#### 构建和发布
+- **文件**: `.github/workflows/build-and-release.yml`
+- **功能**: 完整构建、固件生成、自动发布
+- **触发**: 推送到 `main`、`develop` 分支或创建标签
+
+### 📥 下载和使用
+
+#### 获取最新固件
+1. 访问项目的 [Releases 页面](../../releases)
+2. 下载最新版本的 `esp-sms-relay-vX.X.X.bin` 文件
+3. 使用 PlatformIO 或 esptool 烧录固件
+
+#### 快速烧录
+```bash
+# 使用 PlatformIO
+pio run --target upload --upload-port COM3
+
+# 使用 esptool
+esptool.py --chip esp32s3 --port COM3 --baud 921600 write_flash 0x10000 esp-sms-relay-v1.2.0.bin
+```
+
+### 🔍 构建状态监控
+
+项目首页显示的徽章可以实时查看构建状态：
+- **Build and Release**: 显示最新构建状态
+- **CI Status**: 显示持续集成状态
+- **Release**: 显示最新发布版本
+
+### 📚 详细文档
+
+更多 CI/CD 配置和使用说明，请参考 [CI/CD 指南](docs/CI_CD_GUIDE.md)。
 
 ## 部署和维护
 
