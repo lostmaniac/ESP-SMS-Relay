@@ -7,6 +7,7 @@
 
 #include "http_client.h"
 #include "gsm_service.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 
 /**
@@ -17,7 +18,7 @@
 HttpClient::HttpClient(AtCommandHandler& atHandler, GsmService& gsmService) 
     : atCommandHandler(atHandler), gsmService(gsmService), lastError(""), 
       debugMode(false), initialized(false), httpServiceActive(false), 
-      defaultTimeout(30000) {
+      defaultTimeout(DEFAULT_HTTP_TIMEOUT_MS) {
     // 构造函数实现
 }
 
@@ -213,7 +214,7 @@ bool HttpClient::isNetworkConnected() {
  * @return false PDP上下文未激活
  */
 bool HttpClient::isPdpContextActive() {
-    AtResponse response = atCommandHandler.sendCommandWithFullResponse("AT+CGACT?", 5000);
+    AtResponse response = atCommandHandler.sendCommandWithFullResponse("AT+CGACT?", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     if (response.result == AT_RESULT_SUCCESS) {
         // 检查响应中是否包含激活的PDP上下文
@@ -236,7 +237,7 @@ bool HttpClient::configureApn(const String& apn, const String& username, const S
     
     // 配置PDP上下文
     String command = "AT+CGDCONT=1,\"IP\",\"" + apn + "\"";
-    AtResponse response = atCommandHandler.sendCommand(command, "OK", 10000);
+    AtResponse response = atCommandHandler.sendCommand(command, "OK", DEFAULT_HTTP_TIMEOUT_MS);
     
     if (response.result != AT_RESULT_SUCCESS) {
         setError("配置PDP上下文失败: " + response.response);
@@ -246,7 +247,7 @@ bool HttpClient::configureApn(const String& apn, const String& username, const S
     // 如果提供了用户名和密码，配置认证
     if (username.length() > 0 || password.length() > 0) {
         String authCommand = "AT+CGAUTH=1,1,\"" + username + "\",\"" + password + "\"";
-        response = atCommandHandler.sendCommand(authCommand, "OK", 10000);
+        response = atCommandHandler.sendCommand(authCommand, "OK", DEFAULT_HTTP_TIMEOUT_MS);
         
         if (response.result != AT_RESULT_SUCCESS) {
             debugPrint("警告: 配置认证失败，但继续执行: " + response.response);
@@ -268,7 +269,7 @@ bool HttpClient::activatePdpContext() {
     debugPrint("正在激活PDP上下文...");
     
     // 激活PDP上下文
-    AtResponse response = atCommandHandler.sendCommand("AT+CGACT=1,1", "OK", 30000);
+    AtResponse response = atCommandHandler.sendCommand("AT+CGACT=1,1", "OK", DEFAULT_HTTP_TIMEOUT_MS);
     
     if (response.result == AT_RESULT_SUCCESS) {
         debugPrint("PDP上下文激活成功");
@@ -334,7 +335,7 @@ bool HttpClient::initHttpService() {
     
     debugPrint("初始化HTTP服务...");
     
-    AtResponse response = atCommandHandler.sendCommand("AT+HTTPINIT", "OK", 10000);
+    AtResponse response = atCommandHandler.sendCommand("AT+HTTPINIT", "OK", DEFAULT_HTTP_TIMEOUT_MS);
     
     if (response.result == AT_RESULT_SUCCESS) {
         httpServiceActive = true;
@@ -358,7 +359,7 @@ bool HttpClient::terminateHttpService() {
     
     debugPrint("终止HTTP服务...");
     
-    AtResponse response = atCommandHandler.sendCommand("AT+HTTPTERM", "OK", 10000);
+    AtResponse response = atCommandHandler.sendCommand("AT+HTTPTERM", "OK", DEFAULT_HTTP_TIMEOUT_MS);
     
     httpServiceActive = false;
     
@@ -381,7 +382,7 @@ bool HttpClient::terminateHttpService() {
 bool HttpClient::setHttpParameter(const String& parameter, const String& value) {
     String command = "AT+HTTPPARA=\"" + parameter + "\",\"" + value + "\"";
     
-    AtResponse response = atCommandHandler.sendCommand(command, "OK", 5000);
+    AtResponse response = atCommandHandler.sendCommand(command, "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     if (response.result == AT_RESULT_SUCCESS) {
         debugPrint("设置HTTP参数成功: " + parameter + " = " + value);
@@ -406,7 +407,7 @@ HttpResponse HttpClient::executeHttpAction(HttpClientMethod method, unsigned lon
     debugPrint("执行HTTP动作: " + getMethodString(method));
     
     // 发送HTTP动作命令
-    AtResponse atResponse = atCommandHandler.sendCommand(command, "OK", 5000);
+    AtResponse atResponse = atCommandHandler.sendCommand(command, "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     if (atResponse.result != AT_RESULT_SUCCESS) {
         response.error = HTTP_ERROR_AT_COMMAND;
@@ -445,7 +446,7 @@ bool HttpClient::sendHttpData(const String& data, unsigned long timeout) {
     debugPrint("准备发送HTTP数据，长度: " + String(data.length()));
     
     // 发送数据长度命令
-    AtResponse response = atCommandHandler.sendCommand(command, "DOWNLOAD", 5000);
+    AtResponse response = atCommandHandler.sendCommand(command, "DOWNLOAD", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     if (response.result != AT_RESULT_SUCCESS) {
         setError("HTTP数据准备失败: " + response.response);
@@ -475,7 +476,7 @@ String HttpClient::readHttpResponse(int startPos, int length) {
     
     debugPrint("读取HTTP响应，起始位置: " + String(startPos) + ", 长度: " + String(length));
     
-    AtResponse response = atCommandHandler.sendCommandWithFullResponse(command, 10000);
+    AtResponse response = atCommandHandler.sendCommandWithFullResponse(command, DEFAULT_HTTP_TIMEOUT_MS);
     
     if (response.result == AT_RESULT_SUCCESS) {
         // 解析响应内容

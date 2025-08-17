@@ -7,12 +7,10 @@
 
 #include "database_manager.h"
 #include "../filesystem_manager/filesystem_manager.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 #include <time.h>
-
-// 静态回调函数用于查询结果处理
-static std::vector<std::map<String, String>> queryResults;
-static bool querySuccess = false;
+#include <mutex>
 
 /**
  * @brief SQLite查询回调函数
@@ -23,19 +21,28 @@ static bool querySuccess = false;
  * @return int 0表示继续，非0表示停止
  */
 static int queryCallback(void *data, int argc, char **argv, char **azColName) {
+    if (!data) {
+        return 1; // 错误：无效的数据指针
+    }
+    
     std::vector<std::map<String, String>>* results = static_cast<std::vector<std::map<String, String>>*>(data);
     std::map<String, String> row;
+    
+    // 添加边界检查
+    if (argc < 0) {
+        return 1; // 错误：无效的列数
+    }
+    
     for (int i = 0; i < argc; i++) {
+        if (!azColName || !azColName[i]) {
+            continue; // 跳过无效的列名
+        }
         String colName = String(azColName[i]);
         String colValue = argv[i] ? String(argv[i]) : "";
         row[colName] = colValue;
     }
-    if (results) {
-        results->push_back(row);
-    } else {
-        queryResults.push_back(row);
-    }
-    querySuccess = true;
+    
+    results->push_back(row);
     return 0;
 }
 
@@ -1032,11 +1039,11 @@ bool DatabaseManager::initializeDefaultData() {
         
         String timestamp = getCurrentTimestamp();
         // 使用SQLITE_TRANSIENT确保字符串被复制，避免内存访问错误
-        sqlite3_bind_text(insertStmt, 1, "ESP-SMS-Relay", -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(insertStmt, 2, "12345678", -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 1, DEFAULT_AP_SSID, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 2, DEFAULT_AP_PASSWORD, -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(insertStmt, 3, 1);
-        sqlite3_bind_int(insertStmt, 4, 1);
-        sqlite3_bind_int(insertStmt, 5, 4);
+        sqlite3_bind_int(insertStmt, 4, DEFAULT_AP_CHANNEL);
+        sqlite3_bind_int(insertStmt, 5, DEFAULT_AP_MAX_CONNECTIONS);
         sqlite3_bind_text(insertStmt, 6, timestamp.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(insertStmt, 7, timestamp.c_str(), -1, SQLITE_TRANSIENT);
         
@@ -1061,6 +1068,8 @@ bool DatabaseManager::initializeDefaultData() {
  * @return false 执行失败
  */
 bool DatabaseManager::executeSQL(const String& sql) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    
     if (!db) {
         setError("数据库连接无效");
         return false;
@@ -1092,6 +1101,8 @@ bool DatabaseManager::executeSQL(const String& sql) {
  * @return false 执行失败
  */
 bool DatabaseManager::executeQuery(const String& sql, int (*callback)(void*, int, char**, char**), void* data) {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    
     if (!db) {
         setError("数据库连接无效");
         return false;
@@ -1100,7 +1111,6 @@ bool DatabaseManager::executeQuery(const String& sql, int (*callback)(void*, int
     debugPrint("执行查询: " + sql);
     
     char* errMsg = nullptr;
-    querySuccess = false;
     int rc = sqlite3_exec(db, sql.c_str(), callback, data, &errMsg);
     
     if (rc != SQLITE_OK) {

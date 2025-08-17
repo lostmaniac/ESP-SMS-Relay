@@ -23,6 +23,7 @@
 #include "push_manager.h"
 #include "task_scheduler.h"
 #include "config.h"
+#include "constants.h"
 
 // 全局管理器实例引用
 TerminalManager& terminalManager = TerminalManager::getInstance();

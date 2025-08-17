@@ -6,6 +6,7 @@
  */
 
 #include "at_command_handler.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 
 // 外部串口对象

@@ -15,6 +15,7 @@
 #define GSM_SERVICE_H
 
 #include <Arduino.h>
+#include "../../include/constants.h"
 
 /**
  * @enum GsmNetworkStatus
@@ -73,7 +74,7 @@ public:
      * @return true 命令执行成功
      * @return false 命令执行失败
      */
-    bool sendAtCommand(const String& command, const String& expectedResponse, unsigned long timeout = 3000);
+    bool sendAtCommand(const String& command, const String& expectedResponse, unsigned long timeout = DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     /**
      * @brief 发送AT命令并获取完整响应
@@ -81,7 +82,7 @@ public:
      * @param timeout 超时时间（毫秒）
      * @return String 响应内容
      */
-    String sendAtCommandWithResponse(const String& command, unsigned long timeout = 3000);
+    String sendAtCommandWithResponse(const String& command, unsigned long timeout = DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     /**
      * @brief 检查模块是否在线
@@ -102,7 +103,7 @@ public:
      * @return true 注册成功
      * @return false 注册失败
      */
-    bool waitForNetworkRegistration(unsigned long timeout = 30000);
+    bool waitForNetworkRegistration(unsigned long timeout = DEFAULT_GSM_INIT_TIMEOUT_MS);
     
     /**
      * @brief 获取信号强度

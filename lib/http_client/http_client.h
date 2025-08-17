@@ -19,6 +19,7 @@
 #include <map>
 #include "at_command_handler.h"
 #include "gsm_service.h"
+#include "../../include/constants.h"
 
 /**
  * @enum HttpClientMethod
@@ -72,7 +73,7 @@ struct HttpRequest {
     HttpRequest() : 
         method(HTTP_CLIENT_GET), 
         protocol(HTTP_PROTOCOL), 
-        timeout(30000) {}
+        timeout(DEFAULT_HTTP_TIMEOUT_MS) {}
 };
 
 /**
@@ -140,7 +141,7 @@ public:
      */
     HttpResponse get(const String& url, 
                     const std::map<String, String>& headers = {},
-                    unsigned long timeout = 30000);
+                    unsigned long timeout = DEFAULT_HTTP_TIMEOUT_MS);
     
     /**
      * @brief 执行POST请求
@@ -153,7 +154,7 @@ public:
     HttpResponse post(const String& url, 
                      const String& body,
                      const std::map<String, String>& headers = {},
-                     unsigned long timeout = 30000);
+                     unsigned long timeout = DEFAULT_HTTP_TIMEOUT_MS);
     
     /**
      * @brief 检查网络连接状态

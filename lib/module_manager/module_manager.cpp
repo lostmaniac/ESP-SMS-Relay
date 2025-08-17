@@ -15,6 +15,7 @@
 #include "config.h"
 #include "../sms_handler/sms_handler.h"
 #include "log_manager.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 #include <sys/time.h>
 #include <time.h>

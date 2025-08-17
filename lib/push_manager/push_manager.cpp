@@ -8,6 +8,7 @@
 #include "push_manager.h"
 #include "../log_manager/log_manager.h"
 #include "../database_manager/database_manager.h"
+#include "../../include/constants.h"
 #include <ArduinoJson.h>
 
 // 包含所有推送渠道实现以触发自动注册

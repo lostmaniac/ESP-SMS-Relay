@@ -10,6 +10,7 @@
 #include "../log_manager/log_manager.h"
 #include "../push_manager/push_manager.h"
 #include "../gsm_service/gsm_service.h"
+#include "../../include/constants.h"
 #include <regex>
 #include <time.h>
 #include <sys/time.h>
@@ -17,9 +18,9 @@
 // 默认配置
 const TerminalConfig TerminalManager::DEFAULT_CONFIG = {
     .enabled = true,
-    .maxRules = 100,
+    .maxRules = MAX_FORWARD_RULES,
     .enableCache = true,
-    .cacheSize = 50,
+    .cacheSize = RULE_CACHE_SIZE,
     .enableValidation = true,
     .enableLogging = true
 };

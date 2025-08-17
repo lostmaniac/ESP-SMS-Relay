@@ -18,6 +18,7 @@
 #include <sqlite3.h>
 #include <vector>
 #include <map>
+#include <mutex>
 
 /**
  * @enum DatabaseStatus
@@ -355,6 +356,7 @@ private:
     String lastError;               ///< 最后的错误信息
     bool debugMode;                 ///< 调试模式
     DatabaseInfo dbInfo;            ///< 数据库信息
+    mutable std::mutex dbMutex;     ///< 数据库操作互斥锁
 };
 
 #endif // DATABASE_MANAGER_H

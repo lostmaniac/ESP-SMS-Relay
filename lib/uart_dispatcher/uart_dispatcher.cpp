@@ -1,4 +1,5 @@
 #include "uart_dispatcher.h"
+#include "../../include/constants.h"
 #include "sms_handler.h"
 
 SmsHandler smsHandler;

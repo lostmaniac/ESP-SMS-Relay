@@ -9,6 +9,7 @@
 #include "../push_channel_registry.h"
 #include "../../http_client/http_client.h"
 #include "../../gsm_service/gsm_service.h"
+#include "../../../include/constants.h"
 #include <ArduinoJson.h>
 #include <mbedtls/md.h>
 #include <mbedtls/base64.h>
@@ -371,7 +372,7 @@ bool FeishuBotChannel::sendToFeishu(const String& webhookUrl, const String& mess
     
     debugPrint("发送到飞书的请求体: " + requestBody);
     
-    HttpResponse response = httpClient.post(webhookUrl, requestBody, headers, 30000);
+    HttpResponse response = httpClient.post(webhookUrl, requestBody, headers, DEFAULT_HTTP_TIMEOUT_MS);
     
     debugPrint("飞书响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
     debugPrint("响应内容: " + response.body);

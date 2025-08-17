@@ -7,6 +7,7 @@
  */
 
 #include "sms_sender.h"
+#include "constants.h"
 #include <HardwareSerial.h>
 
 // 引用外部声明的串口对象
@@ -191,18 +192,18 @@ SmsSendResult SmsSender::sendTextSms(const String& recipient, const String& mess
     }
     
     // 切换到文本模式
-    if (!sendAtCommand("AT+CMGF=1", "OK", 5000)) {
+    if (!sendAtCommand("AT+CMGF=1", "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS)) {
         last_error_ = "切换到文本模式失败";
         return SMS_ERROR_SEND_TIMEOUT;
     }
     
-    vTaskDelay(5000);
+    vTaskDelay(DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     // 发送文本模式短信
     bool text_send_success = sendTextData(recipient, message);
     
     // 切换回PDU模式
-    if (!sendAtCommand("AT+CMGF=0", "OK", 5000)) {
+    if (!sendAtCommand("AT+CMGF=0", "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS)) {
         // 切换回PDU模式失败，但短信可能已发送成功
     }
     
@@ -372,7 +373,7 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
     String cmgs_command = "AT+CMGS=" + String(tpdu_length);
     
     // 发送AT+CMGS命令，等待'>'提示符
-    if (!sendAtCommand(cmgs_command, "", 5000, true)) {
+    if (!sendAtCommand(cmgs_command, "", DEFAULT_AT_COMMAND_TIMEOUT_MS, true)) {
         last_error_ = "发送AT+CMGS命令失败";
         return false;
     }
@@ -385,7 +386,7 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
     unsigned long start_time = millis();
     String response = "";
     
-    while (millis() - start_time < 15000) { // 15秒超时
+    while (millis() - start_time < DEFAULT_SMS_SEND_TIMEOUT_MS) { // SMS发送超时
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -465,7 +466,7 @@ bool SmsSender::sendTextData(const String& recipient, const String& message) {
     String cmgs_command = "AT+CMGS=\"" + recipient + "\"";
     
     // 发送AT+CMGS命令，等待'>'提示符
-    if (!sendAtCommand(cmgs_command, "", 5000, true)) {
+    if (!sendAtCommand(cmgs_command, "", DEFAULT_AT_COMMAND_TIMEOUT_MS, true)) {
         last_error_ = "发送AT+CMGS命令失败（文本模式）";
         return false;
     }
@@ -479,7 +480,7 @@ bool SmsSender::sendTextData(const String& recipient, const String& message) {
     String response = "";
     bool send_success = false;
     
-    while (millis() - start_time < 30000) { // 30秒超时
+    while (millis() - start_time < DEFAULT_SMS_SEND_TIMEOUT_MS) { // SMS发送超时
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;

@@ -7,6 +7,7 @@
 
 #include "log_manager.h"
 #include "config_manager.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 #include <stdarg.h>
 
@@ -155,11 +156,29 @@ void LogManager::logf(LogLevel level, LogModule module, const char* format, ...)
         return;
     }
     
-    char buffer[512];
+    // 使用更大的缓冲区并添加边界检查
+    const size_t BUFFER_SIZE = 1024;
+    char buffer[BUFFER_SIZE];
+    
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    
+    // 使用vsnprintf确保不会溢出，并检查返回值
+    int result = vsnprintf(buffer, BUFFER_SIZE, format, args);
     va_end(args);
+    
+    // 检查是否发生截断
+    if (result >= BUFFER_SIZE) {
+        // 如果格式化后的字符串被截断，添加截断标记
+        const char* truncated = "...[TRUNCATED]";
+        size_t truncated_len = strlen(truncated);
+        if (BUFFER_SIZE > truncated_len) {
+            strcpy(buffer + BUFFER_SIZE - truncated_len - 1, truncated);
+        }
+    } else if (result < 0) {
+        // 格式化错误
+        strcpy(buffer, "[LOG FORMAT ERROR]");
+    }
     
     output(level, module, String(buffer));
 }

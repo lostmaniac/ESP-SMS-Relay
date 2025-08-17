@@ -6,6 +6,7 @@
  */
 
 #include "web_server.h"
+#include "../../include/constants.h"
 
 // 静态实例
 static WebServerManager* webServerInstance = nullptr;
@@ -54,12 +55,12 @@ WebServerManager& WebServerManager::getInstance() {
  */
 WebServerConfig WebServerManager::getDefaultConfig() {
     WebServerConfig defaultConfig;
-    defaultConfig.port = 80;
+    defaultConfig.port = DEFAULT_WEB_SERVER_PORT;
     defaultConfig.enableCORS = true;
     defaultConfig.enableAuth = false;
-    defaultConfig.authUsername = "admin";
-    defaultConfig.authPassword = "admin123";
-    defaultConfig.maxConnections = 4;
+    defaultConfig.authUsername = DEFAULT_WEB_AUTH_USERNAME;
+    defaultConfig.authPassword = DEFAULT_WEB_AUTH_PASSWORD;
+    defaultConfig.maxConnections = DEFAULT_WEB_MAX_CONNECTIONS;
     return defaultConfig;
 }
 

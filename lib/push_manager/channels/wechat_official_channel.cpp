@@ -8,6 +8,7 @@
 #include "wechat_official_channel.h"
 #include "../push_channel_registry.h"
 #include "../../http_client/http_client.h"
+#include "../../../include/constants.h"
 #include <ArduinoJson.h>
 
 /**
@@ -287,7 +288,7 @@ String WechatOfficialChannel::getAccessToken(const String& appId, const String& 
     
     HttpClient& httpClient = HttpClient::getInstance();
     std::map<String, String> emptyHeaders;
-    HttpResponse response = httpClient.get(url, emptyHeaders, 30000);
+    HttpResponse response = httpClient.get(url, emptyHeaders, DEFAULT_HTTP_TIMEOUT_MS);
     
     debugPrint("access_token响应 - 状态码: " + String(response.statusCode));
     debugPrint("响应内容: " + response.body);
@@ -371,7 +372,7 @@ bool WechatOfficialChannel::sendTemplateMessage(const String& accessToken, const
     headers["Content-Type"] = "application/json";
     
     HttpClient& httpClient = HttpClient::getInstance();
-    HttpResponse response = httpClient.post(apiUrl, requestBody, headers, 30000);
+    HttpResponse response = httpClient.post(apiUrl, requestBody, headers, DEFAULT_HTTP_TIMEOUT_MS);
     
     debugPrint("模板消息响应 - 状态码: " + String(response.statusCode));
     debugPrint("响应内容: " + response.body);

@@ -8,6 +8,7 @@
 #include "wechat_channel.h"
 #include "../push_channel_registry.h"
 #include "../http_client/http_client.h"
+#include "../../../include/constants.h"
 #include <ArduinoJson.h>
 
 /**
@@ -87,7 +88,7 @@ PushResult WechatChannel::push(const String& config, const PushContext& context)
     
     // 发送HTTP请求
     HttpClient& httpClient = HttpClient::getInstance();
-    HttpResponse response = httpClient.post(webhookUrl, messageBody, headers, 30000);
+    HttpResponse response = httpClient.post(webhookUrl, messageBody, headers, DEFAULT_HTTP_TIMEOUT_MS);
     
     debugPrint("企业微信响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
     debugPrint("响应内容: " + response.body);

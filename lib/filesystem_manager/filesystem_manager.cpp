@@ -6,6 +6,7 @@
  */
 
 #include "filesystem_manager.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 
 /**

@@ -1,6 +1,7 @@
 #include "sms_handler.h"
 #include "Arduino.h"
 #include "log_manager.h"
+#include "../../include/constants.h"
 
 // 引用外部声明的串口对象
 extern HardwareSerial simSerial;

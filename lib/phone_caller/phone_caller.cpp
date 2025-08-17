@@ -13,6 +13,7 @@
  */
 
 #include "phone_caller.h"
+#include "../../include/constants.h"
 #include <HardwareSerial.h>
 
 // 外部串口对象声明
@@ -145,7 +146,7 @@ bool PhoneCaller::hangupCall() {
     unsigned long start_time = millis();
     String response = "";
     
-    while (millis() - start_time < 10000) { // 10秒超时
+    while (millis() - start_time < DEFAULT_PHONE_CALL_TIMEOUT_MS) { // 电话呼叫超时
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -194,7 +195,7 @@ bool PhoneCaller::checkCallStatus() {
     unsigned long start_time = millis();
     String response = "";
     
-    while (millis() - start_time < 5000) {
+    while (millis() - start_time < DEFAULT_AT_COMMAND_TIMEOUT_MS) {
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -231,7 +232,7 @@ bool PhoneCaller::isNetworkReady() {
     String response = "";
     
     // 等待响应
-    while (millis() - start_time < 5000) {
+    while (millis() - start_time < DEFAULT_AT_COMMAND_TIMEOUT_MS) {
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;

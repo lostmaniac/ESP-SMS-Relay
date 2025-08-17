@@ -6,6 +6,7 @@
  */
 
 #include "wifi_manager.h"
+#include "../../include/constants.h"
 
 // 静态实例
 static WiFiManager* wifiManagerInstance = nullptr;
@@ -31,8 +32,8 @@ WiFiManager::WiFiManager() {
     currentConfig.ssid = "";
     currentConfig.password = "";
     currentConfig.enabled = false;
-    currentConfig.channel = 1;
-    currentConfig.maxConnections = 4;
+    currentConfig.channel = DEFAULT_AP_CHANNEL;
+    currentConfig.maxConnections = DEFAULT_AP_MAX_CONNECTIONS;
 }
 
 /**
@@ -104,7 +105,7 @@ bool WiFiManager::startAP() {
     
     // 等待AP启动
     unsigned long startTime = millis();
-    while (WiFi.softAPgetStationNum() == 0 && millis() - startTime < 5000) {
+    while (WiFi.softAPgetStationNum() == 0 && millis() - startTime < DEFAULT_AT_COMMAND_TIMEOUT_MS) {
         delay(100);
     }
     
@@ -254,7 +255,7 @@ void WiFiManager::handleEvents() {
     unsigned long currentTime = millis();
     
     // 每5秒检查一次状态
-    if (currentTime - lastStatusCheck > 5000) {
+    if (currentTime - lastStatusCheck > DEFAULT_AT_COMMAND_TIMEOUT_MS) {
         lastStatusCheck = currentTime;
         
         if (isAPActive()) {

@@ -8,6 +8,7 @@
 #include "webhook_channel.h"
 #include "../push_channel_registry.h"
 #include "../http_client/http_client.h"
+#include "../../../include/constants.h"
 #include <ArduinoJson.h>
 
 /**
@@ -95,9 +96,9 @@ PushResult WebhookChannel::push(const String& config, const PushContext& context
     
     if (method.equalsIgnoreCase("POST") || method.equalsIgnoreCase("PUT")) {
         // PUT请求也使用POST方法发送，因为HttpClient不支持PUT
-        response = httpClient.post(webhookUrl, messageBody, headers, 30000);
+        response = httpClient.post(webhookUrl, messageBody, headers, DEFAULT_HTTP_TIMEOUT_MS);
     } else if (method.equalsIgnoreCase("GET")) {
-        response = httpClient.get(webhookUrl, headers, 30000);
+        response = httpClient.get(webhookUrl, headers, DEFAULT_HTTP_TIMEOUT_MS);
     } else {
         setError("不支持的HTTP方法: " + method + "，仅支持POST、GET和PUT");
         return PUSH_CONFIG_ERROR;

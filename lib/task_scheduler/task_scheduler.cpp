@@ -8,6 +8,7 @@
  */
 
 #include "task_scheduler.h"
+#include "../../include/constants.h"
 
 /**
  * @brief 获取单例实例

@@ -9,6 +9,7 @@
 #include "config_manager.h"
 #include "log_manager.h"
 #include "../../include/config.h"
+#include "../../include/constants.h"
 #include <Arduino.h>
 #include <time.h>
 
@@ -67,7 +68,7 @@ bool GsmService::initialize() {
     
     // 等待模块准备就绪（增加等待时间）
     Serial.println("等待GSM模块启动...");
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    vTaskDelay(DEFAULT_GSM_INIT_TIMEOUT_MS / portTICK_PERIOD_MS);
     
     // 多次尝试检查模块响应
     bool moduleResponding = false;
@@ -86,7 +87,7 @@ bool GsmService::initialize() {
         vTaskDelay(500 / portTICK_PERIOD_MS);
         
         // 等待响应
-        String response = waitForResponse(5000); // 增加超时时间
+        String response = waitForResponse(DEFAULT_GSM_INIT_TIMEOUT_MS); // 增加超时时间
         Serial.printf("收到响应: '%s'\n", response.c_str());
         
         if (response.indexOf("OK") != -1) {
@@ -98,7 +99,7 @@ bool GsmService::initialize() {
         // 如果没有响应，等待后重试
         if (attempt < 5) {
             Serial.println("模块无响应，等待3秒后重试...");
-            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            vTaskDelay(DEFAULT_AT_COMMAND_TIMEOUT_MS / portTICK_PERIOD_MS);
         }
     }
     
@@ -111,7 +112,7 @@ bool GsmService::initialize() {
             digitalWrite(DTR_PIN, HIGH);
             vTaskDelay(1000 / portTICK_PERIOD_MS);
             digitalWrite(DTR_PIN, LOW);
-            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            vTaskDelay(DEFAULT_AT_COMMAND_TIMEOUT_MS / portTICK_PERIOD_MS);
             
             // 复位后再次尝试通信
             clearSerialBuffer();
@@ -119,7 +120,7 @@ bool GsmService::initialize() {
             simSerial.flush();
             vTaskDelay(500 / portTICK_PERIOD_MS);
             
-            String resetResponse = waitForResponse(5000);
+            String resetResponse = waitForResponse(DEFAULT_GSM_INIT_TIMEOUT_MS);
             if (resetResponse.indexOf("OK") != -1) {
                 Serial.println("✓ 硬件复位后模块响应正常");
                 moduleResponding = true;
@@ -146,7 +147,7 @@ bool GsmService::initialize() {
     
     // 设置短信PDU模式（用于PDU解码）
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    if (sendAtCommand("AT+CMGF=0", "OK", 5000)) {
+    if (sendAtCommand("AT+CMGF=0", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 短信PDU模式已设置");
     } else {
         Serial.println("⚠️ 短信PDU模式设置失败");
@@ -154,7 +155,7 @@ bool GsmService::initialize() {
     
     // 配置短信通知模式
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", 5000)) {
+    if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 短信通知模式已配置");
     } else {
         Serial.println("⚠️ 短信通知模式配置失败");
@@ -171,7 +172,7 @@ bool GsmService::initialize() {
     
     // 启用电话功能
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    if (sendAtCommand("AT+CLIP=1", "OK", 5000)) {
+    if (sendAtCommand("AT+CLIP=1", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 来电显示已启用");
     } else {
         Serial.println("⚠️ 来电显示启用失败");
@@ -258,7 +259,7 @@ String GsmService::sendAtCommandWithResponse(const String& command, unsigned lon
  * @return false 模块离线
  */
 bool GsmService::isModuleOnline() {
-    return sendAtCommand("AT", "OK", 3000);
+    return sendAtCommand("AT", "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS);
 }
 
 /**
@@ -266,7 +267,7 @@ bool GsmService::isModuleOnline() {
  * @return GsmNetworkStatus 网络状态
  */
 GsmNetworkStatus GsmService::getNetworkStatus() {
-    String response = sendAtCommandWithResponse("AT+CREG?", 3000);
+    String response = sendAtCommandWithResponse("AT+CREG?", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     return parseNetworkStatus(response);
 }
 
@@ -319,7 +320,7 @@ bool GsmService::waitForNetworkRegistration(unsigned long timeout) {
  * @return int 信号强度值（-1表示获取失败）
  */
 int GsmService::getSignalStrength() {
-    String response = sendAtCommandWithResponse("AT+CSQ", 3000);
+    String response = sendAtCommandWithResponse("AT+CSQ", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     // 解析响应 +CSQ: <rssi>,<ber>
     int csqIndex = response.indexOf("+CSQ:");
@@ -346,7 +347,7 @@ int GsmService::getSignalStrength() {
  * @return false SIM卡未就绪
  */
 bool GsmService::isSimCardReady() {
-    String response = sendAtCommandWithResponse("AT+CPIN?", 3000);
+    String response = sendAtCommandWithResponse("AT+CPIN?", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     return response.indexOf("+CPIN: READY") != -1;
 }
 
@@ -355,7 +356,7 @@ bool GsmService::isSimCardReady() {
  * @return String IMSI号码，失败返回空字符串
  */
 String GsmService::getImsi() {
-    String response = sendAtCommandWithResponse("AT+CIMI", 5000);
+    String response = sendAtCommandWithResponse("AT+CIMI", DEFAULT_GSM_INIT_TIMEOUT_MS);
     
     // 查找IMSI号码（通常是15位数字）
     int startIndex = -1;
@@ -388,7 +389,7 @@ String GsmService::getImsi() {
  * @return String 短信中心号码，失败返回空字符串
  */
 String GsmService::getSmsCenterNumber() {
-    String response = sendAtCommandWithResponse("AT+CSCA?", 3000);
+    String response = sendAtCommandWithResponse("AT+CSCA?", DEFAULT_AT_COMMAND_TIMEOUT_MS);
     
     // 解析响应 +CSCA: "+8613800100500",145
     int csca_index = response.indexOf("+CSCA:");
@@ -414,7 +415,7 @@ String GsmService::getSmsCenterNumber() {
  */
 bool GsmService::setSmsCenterNumber(const String& scaNumber) {
     String command = "AT+CSCA=\"" + scaNumber + "\",145";
-    if (sendAtCommand(command, "OK", 3000)) {
+    if (sendAtCommand(command, "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS)) {
         smsCenterNumber = scaNumber;
         return true;
     }
@@ -428,7 +429,7 @@ bool GsmService::setSmsCenterNumber(const String& scaNumber) {
  */
 bool GsmService::configureSmsNotification() {
     // 配置新短信通知为URC模式
-    if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", 3000)) {
+    if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", DEFAULT_AT_COMMAND_TIMEOUT_MS)) {
         Serial.println("新短信通知已配置。");
         return true;
     } else {
@@ -461,9 +462,9 @@ String GsmService::getLastError() {
 bool GsmService::resetModule() {
     Serial.println("正在重置GSM模块...");
     
-    if (sendAtCommand("AT+CFUN=1,1", "OK", 10000)) {
+    if (sendAtCommand("AT+CFUN=1,1", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         // 等待模块重启
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(DEFAULT_GSM_INIT_TIMEOUT_MS / portTICK_PERIOD_MS);
         
         // 重新初始化
         initialized = false;
@@ -662,7 +663,7 @@ String GsmService::getNetworkTime() {
     Serial.println("正在获取网络时间...");
     
     // 发送AT+CCLK?命令获取时钟
-    String response = sendAtCommandWithResponse("AT+CCLK?", 5000);
+    String response = sendAtCommandWithResponse("AT+CCLK?", DEFAULT_GSM_INIT_TIMEOUT_MS);
     
     if (response.length() == 0) {
         setError("获取网络时间超时");

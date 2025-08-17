@@ -1,5 +1,6 @@
 #include "uart_monitor.h"
 #include "../include/config.h"
+#include "../../include/constants.h"
 #include "uart_dispatcher.h"
 #include "terminal_manager.h"
 
@@ -10,7 +11,7 @@ void uart_monitor_task(void *pvParameters) {
   String buffer = "";
   bool atCommandMode = false;
   unsigned long lastAtCommandTime = 0;
-  const unsigned long AT_COMMAND_TIMEOUT = 5000; // 5秒超时
+  const unsigned long AT_COMMAND_TIMEOUT = DEFAULT_AT_COMMAND_TIMEOUT_MS; // AT命令超时
   
   while (1) {
     // 检查CLI状态
