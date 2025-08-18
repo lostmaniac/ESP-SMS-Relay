@@ -372,7 +372,7 @@ littlefs, data, spiffs,  0x330000,0xCB000,
 coredump, data, coredump,0x3FB000,0x5000,
 ```
 
-## API接口文档
+## API接口文档（暂缓实现）
 
 ### 1. Web API接口
 
