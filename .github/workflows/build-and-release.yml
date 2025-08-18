@@ -6,10 +6,10 @@ name: Build and Release ESP32 Firmware
 # 触发条件
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, dev, release, master ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 # 环境变量
 env:
