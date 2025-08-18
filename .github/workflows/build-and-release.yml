@@ -101,7 +101,7 @@ jobs:
     
     # 上传构建产物
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: esp-sms-relay-firmware-${{ steps.version.outputs.version }}
         path: |
@@ -144,7 +144,7 @@ jobs:
     
     # 下载构建产物
     - name: Download build artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: esp-sms-relay-firmware-${{ steps.version.outputs.version }}
         path: ./artifacts
