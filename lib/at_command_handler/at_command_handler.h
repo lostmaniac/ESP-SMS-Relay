@@ -144,12 +144,47 @@ public:
      * @return AtCommandHandler& 单例引用
      */
     static AtCommandHandler& getInstance();
+    
+    /**
+     * @brief 执行AT命令诊断
+     * @return String 诊断结果报告
+     */
+    String performDiagnostic();
+    
+    /**
+     * @brief 分析AT命令错误
+     * @param command 失败的命令
+     * @param response 错误响应
+     * @return String 错误分析结果
+     */
+    String analyzeCommandError(const String& command, const String& response);
+    
+    /**
+     * @brief 检查设备状态
+     * @return String 设备状态报告
+     */
+    String checkDeviceStatus();
+    
+    /**
+     * @brief 获取详细的错误统计信息
+     * @return String 错误统计报告
+     */
+    String getErrorStatistics();
 
 private:
     HardwareSerial& serialPort; ///< 串口对象引用
     String lastError;           ///< 最后的错误信息
     bool debugMode;            ///< 调试模式
     bool initialized;          ///< 是否已初始化
+    
+    // 错误统计相关成员
+    unsigned long totalCommands;     ///< 总命令数
+    unsigned long successfulCommands; ///< 成功命令数
+    unsigned long failedCommands;    ///< 失败命令数
+    unsigned long timeoutCommands;   ///< 超时命令数
+    unsigned long lastDiagnosticTime; ///< 上次诊断时间
+    String lastFailedCommand;        ///< 最后失败的命令
+    String lastFailedResponse;       ///< 最后失败的响应
     
     /**
      * @brief 读取串口响应

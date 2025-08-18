@@ -8,6 +8,7 @@
 #include "push_manager.h"
 #include "../log_manager/log_manager.h"
 #include "../database_manager/database_manager.h"
+#include "../http_client/http_diagnostics.h"
 #include "../../include/constants.h"
 #include <ArduinoJson.h>
 
@@ -373,7 +374,7 @@ PushResult PushManager::executePush(const ForwardRule& rule, const PushContext& 
 }
 
 /**
- * @brief 使用指定渠道执行推送
+ * @brief 使用指定渠道执行推送（带重试机制）
  * @param channelName 渠道名称
  * @param config 推送配置（JSON格式）
  * @param context 推送上下文
@@ -406,16 +407,75 @@ PushResult PushManager::pushToChannel(const String& channelName, const String& c
         channel->setDebugMode(true);
     }
     
-    // 执行推送
-    PushResult result = channel->push(config, context);
+    // 执行推送，带重试机制
+    PushResult result = PUSH_FAILED;
+    String lastError = "";
     
-    if (result == PUSH_SUCCESS) {
-        debugPrint("✅ 推送成功完成");
-    } else {
-        String channelError = channel->getLastError();
-        setError("推送失败: " + channelError);
-        debugPrint("❌ 推送失败: " + channelError);
+    for (int attempt = 1; attempt <= MAX_PUSH_RETRY_COUNT; attempt++) {
+        debugPrint("推送尝试 " + String(attempt) + "/" + String(MAX_PUSH_RETRY_COUNT));
+        
+        // 执行推送
+        result = channel->push(config, context);
+        
+        if (result == PUSH_SUCCESS) {
+            debugPrint("✅ 推送成功完成 (尝试 " + String(attempt) + ")");
+            break;
+        } else {
+            // 记录错误信息
+            lastError = channel->getLastError();
+            debugPrint("❌ 推送失败 (尝试 " + String(attempt) + "): " + lastError);
+            
+            // 运行HTTP诊断以识别问题原因
+            if (lastError.indexOf("HTTP") != -1 || lastError.indexOf("网络") != -1 || lastError.indexOf("连接") != -1) {
+                debugPrint("🔍 检测到网络相关错误，运行HTTP诊断...");
+                HttpDiagnostics& diagnostics = HttpDiagnostics::getInstance();
+                HttpDiagnosticResult diagResult = diagnostics.runFullDiagnostic();
+                
+                debugPrint("📊 HTTP诊断结果:");
+                debugPrint("  - AT命令处理器: " + String(diagResult.atHandlerStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                debugPrint("  - GSM模块: " + String(diagResult.gsmModuleStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                debugPrint("  - 网络连接: " + String(diagResult.networkStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                debugPrint("  - PDP上下文: " + String(diagResult.pdpContextStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                debugPrint("  - HTTP服务: " + String(diagResult.httpServiceStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                debugPrint("  - HTTP功能: " + String(diagResult.httpFunctionStatus == HTTP_DIAG_OK ? "正常" : "异常"));
+                
+                if (!diagResult.errorMessage.isEmpty()) {
+                    debugPrint("  - 错误详情: " + diagResult.errorMessage);
+                }
+            }
+            
+            // 如果不是最后一次尝试，等待后重试
+            if (attempt < MAX_PUSH_RETRY_COUNT) {
+                debugPrint("等待 " + String(PUSH_RETRY_DELAY_MS) + "ms 后重试...");
+                delay(PUSH_RETRY_DELAY_MS);
+                
+                // 垃圾回收：释放当前渠道实例，重新创建
+                channel.reset(); // 智能指针自动释放内存
+                
+                // 重新创建渠道实例
+                channel = registry.createChannel(channelName);
+                if (!channel) {
+                    setError("重试时无法创建推送渠道: " + channelName);
+                    debugPrint("❌ 重试失败: 无法重新创建渠道 " + channelName);
+                    return PUSH_FAILED;
+                }
+                
+                // 重新设置调试模式
+                if (debugMode) {
+                    channel->setDebugMode(true);
+                }
+            }
+        }
     }
+    
+    // 设置最终错误信息
+    if (result != PUSH_SUCCESS) {
+        setError("推送失败 (" + String(MAX_PUSH_RETRY_COUNT) + "次重试后): " + lastError);
+        debugPrint("❌ 推送最终失败，已重试 " + String(MAX_PUSH_RETRY_COUNT) + " 次");
+    }
+    
+    // 垃圾回收：确保渠道实例被正确释放
+    channel.reset();
     
     return result;
 }

@@ -205,9 +205,45 @@ public:
     
     /**
      * @brief 设置调试模式
-     * @param enabled 是否启用调试
+     * @param enabled 是否启用调试模式
      */
     void setDebugMode(bool enabled);
+    
+    /**
+     * @brief 获取详细的调试日志
+     * @return String 调试日志内容
+     */
+    String getDebugLog();
+    
+    /**
+     * @brief 清空调试日志
+     */
+    void clearDebugLog();
+    
+    /**
+     * @brief 记录请求详细信息
+     * @param request HTTP请求对象
+     */
+    void logRequestDetails(const HttpRequest& request);
+    
+    /**
+     * @brief 记录响应详细信息
+     * @param response HTTP响应对象
+     */
+    void logResponseDetails(const HttpResponse& response);
+    
+    /**
+     * @brief 记录网络状态信息
+     */
+    void logNetworkStatus();
+    
+    /**
+     * @brief 记录AT命令执行详情
+     * @param command AT命令
+     * @param response AT响应
+     * @param duration 执行时长
+     */
+    void logAtCommandDetails(const String& command, const String& response, unsigned long duration);
     
     /**
      * @brief 设置默认超时时间
@@ -229,6 +265,12 @@ private:
     bool initialized;                 ///< 是否已初始化
     bool httpServiceActive;             ///< HTTP服务是否激活
     unsigned long defaultTimeout;       ///< 默认超时时间
+    
+    // 调试日志相关成员
+    String debugLog;                   ///< 调试日志缓冲区
+    unsigned long maxLogSize;          ///< 最大日志大小
+    unsigned long requestCount;       ///< 请求计数
+    unsigned long lastLogTime;        ///< 最后日志时间
     
     /**
      * @brief 初始化HTTP服务
@@ -316,10 +358,16 @@ private:
     
     /**
      * @brief 获取HTTP方法字符串
-     * @param method HTTP方法枚举
+     * @param method HTTP方法
      * @return String 方法字符串
      */
     String getMethodString(HttpClientMethod method);
+    
+    /**
+     * @brief 向调试日志添加内容
+     * @param message 要添加的消息
+     */
+    void appendToDebugLog(const String& message);
 };
 
 #endif // HTTP_CLIENT_H

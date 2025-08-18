@@ -17,7 +17,10 @@ extern HardwareSerial simSerial;
  * @param serial 串口对象引用
  */
 AtCommandHandler::AtCommandHandler(HardwareSerial& serial) 
-    : serialPort(serial), lastError(""), debugMode(false), initialized(false) {
+    : serialPort(serial), lastError(""), debugMode(false), initialized(false),
+      totalCommands(0), successfulCommands(0), failedCommands(0), 
+      timeoutCommands(0), lastDiagnosticTime(0), lastFailedCommand(""), 
+      lastFailedResponse("") {
 }
 
 /**
@@ -94,6 +97,7 @@ AtResponse AtCommandHandler::sendCommand(const String& command,
     response.response = "";
     
     unsigned long startTime = millis();
+    totalCommands++; // 统计总命令数
     
     for (int attempt = 0; attempt <= retries; attempt++) {
         if (attempt > 0) {
@@ -115,6 +119,7 @@ AtResponse AtCommandHandler::sendCommand(const String& command,
         // 检查响应
         if (rawResponse.indexOf(expectedResponse) != -1) {
             response.result = AT_RESULT_SUCCESS;
+            successfulCommands++; // 统计成功命令数
             debugPrint("命令执行成功，响应: " + rawResponse);
             break;
         } else if (rawResponse.indexOf("ERROR") != -1) {
@@ -122,6 +127,7 @@ AtResponse AtCommandHandler::sendCommand(const String& command,
             debugPrint("命令执行错误，响应: " + rawResponse);
         } else if (rawResponse.length() == 0) {
             response.result = AT_RESULT_TIMEOUT;
+            timeoutCommands++; // 统计超时命令数
             debugPrint("命令执行超时");
         } else {
             response.result = AT_RESULT_INVALID;
@@ -131,7 +137,11 @@ AtResponse AtCommandHandler::sendCommand(const String& command,
     
     response.duration = millis() - startTime;
     
+    // 统计失败命令并记录详细信息
     if (response.result != AT_RESULT_SUCCESS) {
+        failedCommands++;
+        lastFailedCommand = command;
+        lastFailedResponse = response.response;
         setError("AT命令失败: " + command + ", 响应: " + response.response);
     }
     
@@ -355,4 +365,164 @@ void AtCommandHandler::debugPrint(const String& message) {
     if (debugMode) {
         Serial.printf("[AT] %s\n", message.c_str());
     }
+}
+
+/**
+ * @brief 执行AT命令诊断
+ * @return String 诊断结果报告
+ */
+String AtCommandHandler::performDiagnostic() {
+    lastDiagnosticTime = millis();
+    String report = "\n=== AT命令处理器诊断报告 ===\n";
+    
+    // 基本状态检查
+    report += "初始化状态: " + String(initialized ? "已初始化" : "未初始化") + "\n";
+    report += "调试模式: " + String(debugMode ? "开启" : "关闭") + "\n";
+    
+    // 设备响应检查
+    bool deviceResponding = isDeviceResponding();
+    report += "设备响应状态: " + String(deviceResponding ? "正常" : "异常") + "\n";
+    
+    // 错误统计信息
+    report += getErrorStatistics();
+    
+    // 设备状态详细检查
+    report += checkDeviceStatus();
+    
+    // 最后错误信息
+    if (lastError.length() > 0) {
+        report += "\n最后错误: " + lastError + "\n";
+    }
+    
+    // 最后失败的命令分析
+    if (lastFailedCommand.length() > 0) {
+        report += "\n最后失败命令分析:\n";
+        report += analyzeCommandError(lastFailedCommand, lastFailedResponse);
+    }
+    
+    report += "\n=== 诊断完成 ===\n";
+    return report;
+}
+
+/**
+ * @brief 分析AT命令错误
+ * @param command 失败的命令
+ * @param response 错误响应
+ * @return String 错误分析结果
+ */
+String AtCommandHandler::analyzeCommandError(const String& command, const String& response) {
+    String analysis = "命令: " + command + "\n";
+    analysis += "响应: " + response + "\n";
+    
+    // 分析常见错误类型
+    if (response.indexOf("ERROR") != -1) {
+        analysis += "错误类型: AT命令执行错误\n";
+        
+        // 具体错误代码分析
+        if (response.indexOf("+CME ERROR") != -1) {
+            analysis += "详细分析: GSM模块内部错误\n";
+            if (response.indexOf("3") != -1) {
+                analysis += "建议: 操作不被允许，检查模块状态\n";
+            } else if (response.indexOf("4") != -1) {
+                analysis += "建议: 操作不支持，检查命令格式\n";
+            } else if (response.indexOf("14") != -1) {
+                analysis += "建议: SIM卡错误，检查SIM卡状态\n";
+            }
+        } else if (response.indexOf("+CMS ERROR") != -1) {
+            analysis += "详细分析: SMS相关错误\n";
+            analysis += "建议: 检查SMS服务状态和参数设置\n";
+        }
+    } else if (response.length() == 0) {
+        analysis += "错误类型: 命令超时\n";
+        analysis += "详细分析: 模块无响应或响应超时\n";
+        analysis += "建议: 检查串口连接、波特率设置或模块电源\n";
+    } else if (response.indexOf("BUSY") != -1) {
+        analysis += "错误类型: 模块忙碌\n";
+        analysis += "详细分析: 模块正在处理其他操作\n";
+        analysis += "建议: 等待当前操作完成后重试\n";
+    } else {
+        analysis += "错误类型: 响应格式异常\n";
+        analysis += "详细分析: 收到意外的响应内容\n";
+        analysis += "建议: 检查命令格式和模块固件版本\n";
+    }
+    
+    return analysis;
+}
+
+/**
+ * @brief 检查设备状态
+ * @return String 设备状态报告
+ */
+String AtCommandHandler::checkDeviceStatus() {
+    String status = "\n--- 设备状态检查 ---\n";
+    
+    // 检查基本AT响应
+    AtResponse atResponse = sendCommand("AT", "OK", 1000, 0);
+    status += "基本AT响应: " + String(atResponse.result == AT_RESULT_SUCCESS ? "正常" : "异常") + "\n";
+    
+    // 检查信号强度
+    AtResponse signalResponse = sendCommand("AT+CSQ", "OK", 2000, 0);
+    if (signalResponse.result == AT_RESULT_SUCCESS) {
+        status += "信号强度查询: 成功\n";
+        status += "信号响应: " + signalResponse.response + "\n";
+    } else {
+        status += "信号强度查询: 失败\n";
+    }
+    
+    // 检查网络注册状态
+    AtResponse networkResponse = sendCommand("AT+CREG?", "OK", 2000, 0);
+    if (networkResponse.result == AT_RESULT_SUCCESS) {
+        status += "网络注册查询: 成功\n";
+        status += "网络状态: " + networkResponse.response + "\n";
+    } else {
+        status += "网络注册查询: 失败\n";
+    }
+    
+    // 检查SIM卡状态
+    AtResponse simResponse = sendCommand("AT+CPIN?", "OK", 2000, 0);
+    if (simResponse.result == AT_RESULT_SUCCESS) {
+        status += "SIM卡状态查询: 成功\n";
+        status += "SIM卡状态: " + simResponse.response + "\n";
+    } else {
+        status += "SIM卡状态查询: 失败\n";
+    }
+    
+    return status;
+}
+
+/**
+ * @brief 获取详细的错误统计信息
+ * @return String 错误统计报告
+ */
+String AtCommandHandler::getErrorStatistics() {
+    String stats = "\n--- 命令执行统计 ---\n";
+    stats += "总命令数: " + String(totalCommands) + "\n";
+    stats += "成功命令数: " + String(successfulCommands) + "\n";
+    stats += "失败命令数: " + String(failedCommands) + "\n";
+    stats += "超时命令数: " + String(timeoutCommands) + "\n";
+    
+    if (totalCommands > 0) {
+        float successRate = (float)successfulCommands / totalCommands * 100.0;
+        float failureRate = (float)failedCommands / totalCommands * 100.0;
+        float timeoutRate = (float)timeoutCommands / totalCommands * 100.0;
+        
+        stats += "成功率: " + String(successRate, 1) + "%\n";
+        stats += "失败率: " + String(failureRate, 1) + "%\n";
+        stats += "超时率: " + String(timeoutRate, 1) + "%\n";
+        
+        // 健康状态评估
+        if (successRate >= 95.0) {
+            stats += "健康状态: 优秀\n";
+        } else if (successRate >= 85.0) {
+            stats += "健康状态: 良好\n";
+        } else if (successRate >= 70.0) {
+            stats += "健康状态: 一般\n";
+        } else {
+            stats += "健康状态: 异常\n";
+        }
+    } else {
+        stats += "健康状态: 无数据\n";
+    }
+    
+    return stats;
 }
