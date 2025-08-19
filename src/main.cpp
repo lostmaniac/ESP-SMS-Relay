@@ -220,48 +220,7 @@ void performStartupCall() {
     Serial.println("✓ UART Monitor Task started");
 }
 
-/**
- * @brief 创建示例转发规则
- */
-void createExampleRules() {
-    Serial.println("\n=== Creating Example Forward Rules ===");
-    
-    // 示例规则1：银行短信转发到企业微信
-    ForwardRule bankRule;
-    bankRule.ruleName = "Bank Notifications";  // 使用 ruleName 而不是 name
-    bankRule.sourceNumber = "95588";  // 使用 sourceNumber 而不是 senderPattern
-    bankRule.keywords = "*余额*";  // 使用 keywords 而不是 contentPattern
-    bankRule.pushType = "wechat";
-    bankRule.pushConfig = "{\"webhook\":\"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx\"}";
-    bankRule.enabled = true;
-    bankRule.isDefaultForward = false;
-    
-    int bankRuleId = terminalManager.addForwardRule(bankRule);
-    if (bankRuleId > 0) {
-        Serial.println("✓ Created bank rule with ID: " + String(bankRuleId));
-    } else {
-        Serial.println("✗ Failed to create bank rule: " + terminalManager.getLastError());
-    }
-    
-    // 示例规则2：验证码转发到钉钉
-    ForwardRule codeRule;
-    codeRule.ruleName = "Verification Codes";  // 使用 ruleName 而不是 name
-    codeRule.sourceNumber = "*";  // 使用 sourceNumber 而不是 senderPattern
-    codeRule.keywords = "*验证码*";  // 使用 keywords 而不是 contentPattern
-    codeRule.pushType = "dingtalk";
-    codeRule.pushConfig = "{\"webhook\":\"https://oapi.dingtalk.com/robot/send?access_token=xxx\"}";
-    codeRule.enabled = true;
-    codeRule.isDefaultForward = false;
-    
-    int codeRuleId = terminalManager.addForwardRule(codeRule);
-    if (codeRuleId > 0) {
-        Serial.println("✓ Created verification code rule with ID: " + String(codeRuleId));
-    } else {
-        Serial.println("✗ Failed to create verification code rule: " + terminalManager.getLastError());
-    }
-    
-    Serial.println("=== Example Rules Creation Complete ===");
-}
+
 
 /**
  * @brief 系统设置函数

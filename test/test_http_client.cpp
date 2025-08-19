@@ -8,7 +8,6 @@
  */
 
 #include <Arduino.h>
-#include "module_manager.h"
 #include "http_client.h"
 
 /**
@@ -455,13 +454,7 @@ void testHttpClientModule() {
     Serial.println("\n\n🔧 HTTP客户端模块完整测试");
     Serial.println("=============================================");
     
-    // 检查模块管理器是否已初始化
-    ModuleManager& moduleManager = ModuleManager::getInstance();
-    if (!moduleManager.areAllModulesReady()) {
-        Serial.println("❌ 错误: 模块管理器未完全初始化");
-        Serial.println("请确保在调用此函数前已初始化所有模块");
-        return;
-    }
+    // 注意：请确保在调用此函数前已初始化HTTP客户端模块
     
     // 运行单元测试
     bool testsPass = runAllHttpClientTests();
