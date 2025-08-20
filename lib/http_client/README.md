@@ -28,25 +28,16 @@ lib/http_client/
 
 - `AtCommandHandler`: AT命令处理器
 - `GsmService`: GSM服务模块
-- `ModuleManager`: 模块管理器
 
 ## 快速开始
 
 ### 1. 模块初始化
 
 ```cpp
-#include "module_manager.h"
 #include "http_client.h"
 
 void setup() {
     Serial.begin(115200);
-    
-    // 初始化所有模块
-    ModuleManager& moduleManager = ModuleManager::getInstance();
-    if (!moduleManager.initializeAllModules()) {
-        Serial.println("模块初始化失败: " + moduleManager.getLastError());
-        return;
-    }
     
     // 获取HTTP客户端实例
     HttpClient* httpClient = getHttpClient();
