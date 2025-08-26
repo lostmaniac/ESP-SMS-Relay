@@ -281,10 +281,7 @@ public:
      */
     void setDebugMode(bool enable);
 
-    /**
-     * @brief 执行WAL检查点，将WAL文件中的更改写入主数据库文件
-     */
-    void checkpoint();
+
 
 private:
     /**

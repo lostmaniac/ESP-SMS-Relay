@@ -7,7 +7,6 @@ class DNSServer;
 
 enum WiFiMode {
     WM_WIFI_MODE_AP,
-    WM_WIFI_MODE_STA,
     WM_WIFI_MODE_DISCONNECTED
 };
 
@@ -15,7 +14,7 @@ class WiFiManagerWeb {
 public:
     static WiFiManagerWeb& getInstance();
 
-    bool connect();
+    bool startAP();
     WiFiMode getMode();
     String getIPAddress();
     void loop();
@@ -27,8 +26,7 @@ private:
     WiFiManagerWeb(const WiFiManagerWeb&) = delete;
     WiFiManagerWeb& operator=(const WiFiManagerWeb&) = delete;
 
-    bool connectToSavedNetwork();
-    void startAPMode();
+    void configureAPMode();
 
     WiFiMode currentMode;
     String ipAddress;

@@ -103,18 +103,18 @@ bool initializeSystem() {
 void initializeWifiAndWebServer() {
     Serial.println("\n=== Initializing WiFi & Web Server ===");
     WiFiManagerWeb& wifiManager = WiFiManagerWeb::getInstance();
-    if (wifiManager.connect()) {
-        // Connected to WiFi in STA mode
-        Serial.println("✓ WiFi connected in STA mode.");
-        Serial.println("  IP Address: " + wifiManager.getIPAddress());
+    
+    // 启动AP模式
+    if (wifiManager.startAP()) {
+        Serial.println("✓ WiFi Access Point started successfully.");
+        Serial.println("  AP IP Address: " + wifiManager.getIPAddress());
+        Serial.println("  Connect to the AP and go to http://" + wifiManager.getIPAddress() + " to access web interface.");
+        
+        // 启动Web服务器用于AP模式管理
         WebServer::getInstance().start();
+        Serial.println("✓ Web server started for AP mode management.");
     } else {
-        // In AP mode for configuration
-        Serial.println("✓ WiFi started in AP mode for configuration.");
-        Serial.println("  Connect to SSID: ESP-SMS-Relay-Setup");
-        Serial.println("  Go to http://" + wifiManager.getIPAddress() + " to configure.");
-        // Start web server for AP mode configuration
-        WebServer::getInstance().start(); // In a real scenario, we might have a different set of routes for AP mode
+        Serial.println("❌ Failed to start WiFi Access Point.");
     }
 }
 

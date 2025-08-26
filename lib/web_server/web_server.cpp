@@ -47,13 +47,13 @@ void WebServer::setupRoutes() {
     server->on("/api/logs", HTTP_GET, WebServer::handleGetLogs);
     server->on("/api/reboot", HTTP_POST, WebServer::handleReboot);
     server->on("/api/push_channels", HTTP_GET, WebServer::handleGetPushChannels);
-    server->on("/api/wifi/sta_settings", HTTP_GET, WebServer::handleGetStaSettings);
+    server->on("/api/wifi/ap_settings", HTTP_GET, WebServer::handleGetAPSettings);
 
     // API routes with body parsers
     server->on("/api/rules", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleAddRule);
     server->on("/api/rules/update", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateRule);
     server->on("/api/rules/delete", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleDeleteRule);
-    server->on("/api/wifi/sta_settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateStaSettings);
+    server->on("/api/wifi/ap_settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateAPSettings);
 
     // AP Mode routes
     server->on("/connect", HTTP_POST, WebServer::handleConnect);
@@ -150,13 +150,15 @@ void WebServer::handleGetSmsHistory(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-void WebServer::handleGetStaSettings(AsyncWebServerRequest *request) {
+void WebServer::handleGetAPSettings(AsyncWebServerRequest *request) {
     DatabaseManager& dbManager = DatabaseManager::getInstance();
     APConfig config = dbManager.getAPConfig();
     
     JsonDocument doc;
     doc["ssid"] = config.ssid;
     doc["password"] = config.password;
+    doc["channel"] = config.channel;
+    doc["maxConnections"] = config.maxConnections;
     doc["enabled"] = config.enabled;
     
     String response;
@@ -164,16 +166,19 @@ void WebServer::handleGetStaSettings(AsyncWebServerRequest *request) {
     request->send(200, "application/json", response);
 }
 
-void WebServer::handleUpdateStaSettings(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+void WebServer::handleUpdateAPSettings(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) {
         JsonDocument doc;
-        if (deserializeJson(doc, (const char*)data, len)) {
+        DeserializationError error = deserializeJson(doc, (const char*)data, len);
+        if (error) {
             request->send(400, "text/plain", "Invalid JSON");
             return;
         }
 
         String ssid = doc["ssid"];
         String password = doc["password"];
+        int channel = doc["channel"].as<int>();
+        int maxConnections = doc["maxConnections"].as<int>();
         bool enabled = doc["enabled"];
 
         if (password.length() > 0 && password.length() < 8) {
@@ -181,19 +186,45 @@ void WebServer::handleUpdateStaSettings(AsyncWebServerRequest *request, uint8_t 
             return;
         }
 
+        if (channel < 1 || channel > 13) {
+            request->send(400, "text/plain", "Channel must be between 1 and 13");
+            return;
+        }
+
+        if (maxConnections < 1 || maxConnections > 8) {
+            request->send(400, "text/plain", "Max connections must be between 1 and 8");
+            return;
+        }
+
         DatabaseManager& dbManager = DatabaseManager::getInstance();
         APConfig config = dbManager.getAPConfig(); // Get existing AP config to preserve other fields
+        
+        Serial.println("[WebServer] Updating AP settings:");
+        Serial.println("  SSID: " + ssid);
+        Serial.println(String("  Password: ") + (password.length() > 0 ? "[SET]" : "[EMPTY]"));
+        Serial.println("  Channel: " + String(channel));
+        Serial.println("  Max Connections: " + String(maxConnections));
+        Serial.println("  Enabled: " + String(enabled));
+        
         config.ssid = ssid;
         config.password = password;
+        config.channel = channel;
+        config.maxConnections = maxConnections;
         config.enabled = enabled;
 
-        if (dbManager.updateAPConfig(config)) {
-            dbManager.checkpoint(); // Ensure changes are written to disk
+        Serial.println("[WebServer] Calling updateAPConfig...");
+        bool updateResult = dbManager.updateAPConfig(config);
+        Serial.println("[WebServer] Update result: " + String(updateResult));
+        
+        if (updateResult) {
+            Serial.println("[WebServer] Settings saved successfully. Rebooting...");
             request->send(200, "text/plain", "Settings saved. Rebooting...");
             delay(1000);
             ESP.restart();
         } else {
-            request->send(500, "text/plain", "Failed to save settings");
+            Serial.println("[WebServer] Failed to save settings to database");
+            Serial.println("[WebServer] Last error: " + dbManager.getLastError());
+            request->send(500, "text/plain", "Failed to save settings: " + dbManager.getLastError());
         }
     }
 }
@@ -201,7 +232,8 @@ void WebServer::handleUpdateStaSettings(AsyncWebServerRequest *request, uint8_t 
 void WebServer::handleAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) { // Process only the first chunk for simplicity
         JsonDocument doc;
-        if (deserializeJson(doc, (const char*)data, len)) {
+        DeserializationError error = deserializeJson(doc, (const char*)data, len);
+        if (error) {
             request->send(400, "text/plain", "Invalid JSON");
             return;
         }
@@ -226,7 +258,8 @@ void WebServer::handleAddRule(AsyncWebServerRequest *request, uint8_t *data, siz
 void WebServer::handleUpdateRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) {
         JsonDocument doc;
-        if (deserializeJson(doc, (const char*)data, len)) {
+        DeserializationError error = deserializeJson(doc, (const char*)data, len);
+        if (error) {
             request->send(400, "text/plain", "Invalid JSON");
             return;
         }
@@ -252,7 +285,8 @@ void WebServer::handleUpdateRule(AsyncWebServerRequest *request, uint8_t *data, 
 void WebServer::handleDeleteRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (index == 0) {
         JsonDocument doc;
-        if (deserializeJson(doc, (const char*)data, len)) {
+        DeserializationError error = deserializeJson(doc, (const char*)data, len);
+        if (error) {
             request->send(400, "text/plain", "Invalid JSON");
             return;
         }

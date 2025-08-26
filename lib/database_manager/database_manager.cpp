@@ -153,8 +153,8 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
     // 设置临时存储为内存模式
     executeSQL("PRAGMA temp_store = MEMORY");
     
-    // 设置日志模式为WAL（Write-Ahead Logging）以提高性能
-    executeSQL("PRAGMA journal_mode = WAL");
+    // 设置日志模式为DELETE（默认模式）
+    executeSQL("PRAGMA journal_mode = DELETE");
     
     // 设置同步模式为NORMAL（平衡性能和安全性）
     executeSQL("PRAGMA synchronous = NORMAL");
@@ -181,19 +181,19 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
         return false;
     }
     
-    // 只有在数据库文件不存在时才初始化默认数据
+    // 无论数据库文件是否存在，都要检查并确保默认数据存在
+    debugPrint("检查并确保默认数据存在");
+    if (!initializeDefaultData()) {
+        setError("初始化默认数据失败");
+        close();
+        status = DB_ERROR;
+        return false;
+    }
+    
     if (!dbExists) {
-        debugPrint("数据库文件不存在，初始化默认数据");
-        // 初始化默认数据
-        if (!initializeDefaultData()) {
-            setError("初始化默认数据失败");
-            close();
-            status = DB_ERROR;
-            return false;
-        }
         debugPrint("新数据库初始化完成");
     } else {
-        debugPrint("数据库文件已存在，跳过默认数据初始化");
+        debugPrint("现有数据库验证完成");
     }
     
     status = DB_READY;
@@ -305,12 +305,17 @@ APConfig DatabaseManager::getAPConfig() {
     config.channel = 1;
     config.maxConnections = 4;
     
+    debugPrint("[DatabaseManager] getAPConfig() called");
+    
     if (!isReady()) {
+        debugPrint("[DatabaseManager] Database not ready, returning default config");
         return config;
     }
     
+    debugPrint("[DatabaseManager] Executing query: SELECT * FROM ap_config WHERE id = 1");
     std::vector<std::map<String, String>> configResults;
     if (executeQuery("SELECT * FROM ap_config WHERE id = 1", queryCallback, &configResults)) {
+        debugPrint("[DatabaseManager] Query executed successfully, results count: " + String(configResults.size()));
         if (!configResults.empty()) {
             auto& row = configResults[0];
             config.ssid = row["ssid"];
@@ -320,7 +325,19 @@ APConfig DatabaseManager::getAPConfig() {
             config.maxConnections = row["max_connections"].toInt();
             config.createdAt = row["created_at"];
             config.updatedAt = row["updated_at"];
+            
+            debugPrint("[DatabaseManager] Loaded AP config from database:");
+            debugPrint("  SSID: " + config.ssid);
+            debugPrint("  Password: " + String(config.password.length() > 0 ? "[SET]" : "[EMPTY]"));
+            debugPrint("  Channel: " + String(config.channel));
+            debugPrint("  Max Connections: " + String(config.maxConnections));
+            debugPrint("  Enabled: " + String(config.enabled));
+            debugPrint("  Updated At: " + config.updatedAt);
+        } else {
+            debugPrint("[DatabaseManager] No AP config found in database, using defaults");
         }
+    } else {
+        debugPrint("[DatabaseManager] Failed to execute query, using default config");
     }
     
     return config;
@@ -360,9 +377,11 @@ bool DatabaseManager::updateAPConfig(const APConfig& config) {
     sqlite3_finalize(stmt);
     
     if (rc != SQLITE_DONE) {
-        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        setError("更新AP配置失败: " + String(sqlite3_errmsg(db)));
         return false;
     }
+    
+    debugPrint("AP配置更新成功");
     
     return true;
 }
@@ -409,7 +428,10 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
         return -1;
     }
     
-    return sqlite3_last_insert_rowid(db);
+    int newRuleId = sqlite3_last_insert_rowid(db);
+    debugPrint("转发规则添加成功，ID: " + String(newRuleId));
+    
+    return newRuleId;
 }
 
 /**
@@ -453,6 +475,8 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
         return false;
     }
     
+    debugPrint("转发规则更新成功");
+    
     return true;
 }
 
@@ -486,6 +510,8 @@ bool DatabaseManager::deleteForwardRule(int ruleId) {
         setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
         return false;
     }
+    
+    debugPrint("转发规则删除成功");
     
     return true;
 }
@@ -955,21 +981,7 @@ bool DatabaseManager::createTables() {
         return false;
     }
 
-    // 创建STA配置表
-    String createSTAConfigTable = 
-        "CREATE TABLE IF NOT EXISTS sta_config ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "ssid TEXT NOT NULL,"
-        "password TEXT NOT NULL,"
-        "enabled INTEGER DEFAULT 1,"
-        "created_at TEXT NOT NULL,"
-        "updated_at TEXT NOT NULL"
-        ")";
 
-    if (!executeSQL(createSTAConfigTable)) {
-        setError("创建STA配置表失败");
-        return false;
-    }
     
     // 创建转发规则表
     String createForwardRulesTable = 
@@ -1026,9 +1038,9 @@ bool DatabaseManager::createTables() {
  * @return false 初始化失败
  */
 bool DatabaseManager::initializeDefaultData() {
-    debugPrint("开始初始化默认数据");
+    debugPrint("开始检查并初始化默认数据");
     
-    // 检查AP配置是否已存在
+    // 检查AP配置表是否存在记录
     const char* countSql = "SELECT COUNT(*) FROM ap_config";
     sqlite3_stmt* countStmt;
     
@@ -1044,9 +1056,12 @@ bool DatabaseManager::initializeDefaultData() {
     }
     sqlite3_finalize(countStmt);
     
+    debugPrint("AP配置表当前记录数: " + String(count));
+    
     if (count == 0) {
-        // 插入默认AP配置
-        const char* insertSql = "INSERT INTO ap_config (ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        debugPrint("AP配置表为空，插入默认配置");
+        // 插入默认AP配置，确保id=1
+        const char* insertSql = "INSERT INTO ap_config (id, ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt;
         
         rc = sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nullptr);
@@ -1072,12 +1087,61 @@ bool DatabaseManager::initializeDefaultData() {
             setError("插入默认AP配置失败: " + String(sqlite3_errmsg(db)));
             return false;
         }
-        debugPrint("默认AP配置已创建");
+        debugPrint("默认AP配置已创建 (id=1)");
+    } else {
+        // 检查是否存在id=1的记录
+        const char* checkIdSql = "SELECT COUNT(*) FROM ap_config WHERE id = 1";
+        sqlite3_stmt* checkIdStmt;
+        
+        rc = sqlite3_prepare_v2(db, checkIdSql, -1, &checkIdStmt, nullptr);
+        if (rc != SQLITE_OK) {
+            setError("准备检查ID语句失败: " + String(sqlite3_errmsg(db)));
+            return false;
+        }
+        
+        int idCount = 0;
+        if (sqlite3_step(checkIdStmt) == SQLITE_ROW) {
+            idCount = sqlite3_column_int(checkIdStmt, 0);
+        }
+        sqlite3_finalize(checkIdStmt);
+        
+        debugPrint("AP配置表中id=1的记录数: " + String(idCount));
+        
+        if (idCount == 0) {
+            debugPrint("AP配置表存在记录但缺少id=1的记录，插入默认配置");
+            // 插入id=1的默认配置
+            const char* insertIdSql = "INSERT INTO ap_config (id, ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)";
+            sqlite3_stmt* insertIdStmt;
+            
+            rc = sqlite3_prepare_v2(db, insertIdSql, -1, &insertIdStmt, nullptr);
+            if (rc != SQLITE_OK) {
+                setError("准备插入ID配置语句失败: " + String(sqlite3_errmsg(db)));
+                return false;
+            }
+            
+            String timestamp = getCurrentTimestamp();
+            sqlite3_bind_text(insertIdStmt, 1, DEFAULT_AP_SSID, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertIdStmt, 2, DEFAULT_AP_PASSWORD, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(insertIdStmt, 3, 1);
+            sqlite3_bind_int(insertIdStmt, 4, DEFAULT_AP_CHANNEL);
+            sqlite3_bind_int(insertIdStmt, 5, DEFAULT_AP_MAX_CONNECTIONS);
+            sqlite3_bind_text(insertIdStmt, 6, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertIdStmt, 7, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+            
+            rc = sqlite3_step(insertIdStmt);
+            sqlite3_finalize(insertIdStmt);
+            
+            if (rc != SQLITE_DONE) {
+                setError("插入默认AP配置(id=1)失败: " + String(sqlite3_errmsg(db)));
+                return false;
+            }
+            debugPrint("默认AP配置已补充创建 (id=1)");
+        } else {
+            debugPrint("AP配置表中已存在id=1的记录，无需创建默认配置");
+        }
     }
-
     
-    
-    debugPrint("默认数据初始化完成");
+    debugPrint("默认数据检查和初始化完成");
     return true;
 }
 
@@ -1173,26 +1237,4 @@ String DatabaseManager::getCurrentTimestamp() {
     // 在实际应用中，可以使用RTC或NTP时间
     unsigned long currentTime = millis();
     return String(currentTime);
-}
-
-/**
- * @brief 执行WAL检查点，将WAL文件中的更改写入主数据库文件
- */
-void DatabaseManager::checkpoint() {
-    std::lock_guard<std::mutex> lock(dbMutex);
-    if (!db) {
-        setError("数据库连接无效，无法执行检查点");
-        return;
-    }
-    debugPrint("执行WAL检查点...");
-    char* errMsg = nullptr;
-    int rc = sqlite3_wal_checkpoint(db, nullptr); // Pass nullptr for dbName to checkpoint all databases
-    if (rc != SQLITE_OK) {
-        setError("WAL检查点失败: " + String(sqlite3_errmsg(db)));
-        if (errMsg) {
-            sqlite3_free(errMsg);
-        }
-    } else {
-        debugPrint("WAL检查点成功");
-    }
 }

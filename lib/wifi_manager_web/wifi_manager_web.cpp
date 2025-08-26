@@ -14,57 +14,30 @@ WiFiManagerWeb::~WiFiManagerWeb() {
     WiFi.disconnect(true);
 }
 
-bool WiFiManagerWeb::connect() {
-    Serial.println("Starting WiFi connection...");
-    if (connectToSavedNetwork()) {
-        return true;
-    }
-
-    Serial.println("Could not connect to saved network. Starting AP mode.");
-    startAPMode();
-    return false; // Indicates that we are in AP mode, not connected to WAN
+bool WiFiManagerWeb::startAP() {
+    Serial.println("Starting WiFi Access Point...");
+    configureAPMode();
+    return true; // AP mode started successfully
 }
 
-bool WiFiManagerWeb::connectToSavedNetwork() {
+void WiFiManagerWeb::configureAPMode() {
     DatabaseManager& db = DatabaseManager::getInstance();
-    APConfig apConfig = db.getAPConfig(); 
-
-    if (!apConfig.enabled) {
-        Serial.println("No saved & enabled WiFi credentials found.");
-        return false;
-    }
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(apConfig.ssid.c_str(), apConfig.password.c_str());
-
-    Serial.print("Connecting to " + apConfig.ssid);
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-        Serial.print(".");
-        delay(500);
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nConnected!");
-        ipAddress = WiFi.localIP().toString();
-        currentMode = WM_WIFI_MODE_STA;
-        Serial.println("IP Address: " + ipAddress);
-        return true;
-    }
-
-    Serial.println("\nConnection failed.");
-    WiFi.disconnect();
-    return false;
-}
-
-void WiFiManagerWeb::startAPMode() {
-    DatabaseManager& db = DatabaseManager::getInstance();
+    
+    Serial.println("[WiFiManager] Reading AP config from database...");
     APConfig apConfig = db.getAPConfig();
+    
+    Serial.println("[WiFiManager] AP Configuration loaded:");
+    Serial.println("  SSID: " + apConfig.ssid);
+    Serial.println("  Password: " + String(apConfig.password.length() > 0 ? "[SET]" : "[EMPTY]"));
+    Serial.println("  Channel: " + String(apConfig.channel));
+    Serial.println("  Max Connections: " + String(apConfig.maxConnections));
+    Serial.println("  Enabled: " + String(apConfig.enabled));
 
-    Serial.println("Starting Access Point...");
+    Serial.println("[WiFiManager] Starting Access Point...");
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(apConfig.ssid.c_str(), apConfig.password.c_str(), apConfig.channel, 0, apConfig.maxConnections);
+    
+    bool apResult = WiFi.softAP(apConfig.ssid.c_str(), apConfig.password.c_str(), apConfig.channel, 0, apConfig.maxConnections);
+    Serial.println("[WiFiManager] WiFi.softAP() result: " + String(apResult ? "SUCCESS" : "FAILED"));
     
     ipAddress = WiFi.softAPIP().toString();
     currentMode = WM_WIFI_MODE_AP;
@@ -72,8 +45,14 @@ void WiFiManagerWeb::startAPMode() {
     // Start DNS server for captive portal
     dnsServer->start(53, "*", WiFi.softAPIP());
 
-    Serial.println("AP SSID: " + apConfig.ssid);
-    Serial.println("AP IP Address: " + ipAddress);
+    Serial.println("[WiFiManager] AP Started:");
+    Serial.println("  SSID: " + apConfig.ssid);
+    Serial.println("  IP Address: " + ipAddress);
+    
+    // Verify the actual AP configuration
+    Serial.println("[WiFiManager] Verifying actual AP settings:");
+    Serial.println("  Actual SSID: " + WiFi.softAPSSID());
+    Serial.println("  Actual IP: " + WiFi.softAPIP().toString());
 }
 
 WiFiMode WiFiManagerWeb::getMode() {

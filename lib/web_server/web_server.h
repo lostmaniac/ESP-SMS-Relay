@@ -30,8 +30,8 @@ private:
     static void handleReboot(class AsyncWebServerRequest *request);
     static void handleGetSmsHistory(class AsyncWebServerRequest *request);
     static void handleGetDocsGuide(class AsyncWebServerRequest *request);
-    static void handleGetStaSettings(class AsyncWebServerRequest *request);
-    static void handleUpdateStaSettings(class AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
+    static void handleGetAPSettings(class AsyncWebServerRequest *request);
+    static void handleUpdateAPSettings(class AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
     static void handleNotFound(class AsyncWebServerRequest *request);
     static void handleAPRoot(class AsyncWebServerRequest *request);
     static void handleConnect(class AsyncWebServerRequest *request);

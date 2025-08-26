@@ -30,56 +30,78 @@ function showPage(page) {
 async function loadWifiSettingsPage() {
     const content = document.getElementById('content');
     try {
-        const response = await fetch('/api/wifi/sta_settings');
+        const response = await fetch('/api/wifi/ap_settings');
         const data = await response.json();
-        let html = '<h2>WiFi设置</h2>';
+        let html = '<h2>AP热点设置</h2>';
         html += '<div class="form-group">';
-        html += '    <label for="ssid">SSID:</label>';
+        html += '    <label for="ssid">AP SSID:</label>';
         html += `    <input type="text" id="ssid" value="${data.ssid}">`;
         html += '</div>';
         html += '<div class="form-group">';
-        html += '    <label for="password">密码 (至少8位):</label>';
+        html += '    <label for="password">AP密码 (至少8位):</label>';
         html += `    <input type="text" id="password" value="${data.password}">`;
+        html += '</div>';
+        html += '<div class="form-group">';
+        html += '    <label for="channel">信道 (1-13):</label>';
+        html += `    <input type="number" id="channel" min="1" max="13" value="${data.channel}">`;
+        html += '</div>';
+        html += '<div class="form-group">';
+        html += '    <label for="maxConnections">最大连接数 (1-8):</label>';
+        html += `    <input type="number" id="maxConnections" min="1" max="8" value="${data.maxConnections}">`;
         html += '</div>';
         html += '<button onclick="saveWifiSettings()">保存并重启</button>';
         html += '<div id="message" class="message"></div>';
         content.innerHTML = html;
     } catch (error) {
-        console.error('加载WiFi设置失败:', error);
-        content.innerHTML = '<h2>加载WiFi设置失败，请重试。</h2>';
+        console.error('加载AP设置失败:', error);
+        content.innerHTML = '<h2>加载AP设置失败，请重试。</h2>';
     }
 }
 
 async function saveWifiSettings() {
     const ssid = document.getElementById('ssid').value;
     const password = document.getElementById('password').value;
+    const channel = parseInt(document.getElementById('channel').value);
+    const maxConnections = parseInt(document.getElementById('maxConnections').value);
     const messageDiv = document.getElementById('message');
 
     if (password.length > 0 && password.length < 8) {
         messageDiv.className = 'message error';
-        messageDiv.innerText = '密码必须至少8位。';
+        messageDiv.innerText = 'AP密码必须至少8位。';
+        return;
+    }
+
+    if (channel < 1 || channel > 13) {
+        messageDiv.className = 'message error';
+        messageDiv.innerText = '信道必须在1-13之间。';
+        return;
+    }
+
+    if (maxConnections < 1 || maxConnections > 8) {
+        messageDiv.className = 'message error';
+        messageDiv.innerText = '最大连接数必须在1-8之间。';
         return;
     }
 
     try {
-        const response = await fetch('/api/wifi/sta_settings', {
+        const response = await fetch('/api/wifi/ap_settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid, password })
+            body: JSON.stringify({ ssid, password, channel, maxConnections, enabled: true })
         });
 
         if (response.ok) {
             messageDiv.className = 'message success';
-            messageDiv.innerText = '设置已保存，设备正在重启...';
+            messageDiv.innerText = 'AP设置已保存，设备正在重启...';
         } else {
             const errorText = await response.text();
             messageDiv.className = 'message error';
-            messageDiv.innerText = '保存设置失败: ' + errorText;
+            messageDiv.innerText = '保存AP设置失败: ' + errorText;
         }
     } catch (error) {
-        console.error('保存WiFi设置时出错:', error);
+        console.error('保存AP设置时出错:', error);
         messageDiv.className = 'message error';
-        messageDiv.innerText = '保存WiFi设置时发生错误。';
+        messageDiv.innerText = '保存AP设置时发生错误。';
     }
 }
 
