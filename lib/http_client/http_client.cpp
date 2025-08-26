@@ -273,26 +273,6 @@ HttpResponse HttpClient::request(const HttpRequest& request) {
 }
 
 /**
- * @brief 执行GET请求
- * @param url 请求URL
- * @param headers 请求头（可选）
- * @param timeout 超时时间（可选）
- * @return HttpResponse 响应结果
- */
-HttpResponse HttpClient::get(const String& url, 
-                            const std::map<String, String>& headers,
-                            unsigned long timeout) {
-    HttpRequest request;
-    request.url = url;
-    request.method = HTTP_CLIENT_GET;
-    request.protocol = detectProtocol(url);
-    request.headers = headers;
-    request.timeout = timeout;
-    
-    return this->request(request);
-}
-
-/**
  * @brief 执行POST请求
  * @param url 请求URL
  * @param body 请求体

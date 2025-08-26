@@ -45,6 +45,8 @@ struct APConfig {
     String updatedAt;      ///< 修改时间
 };
 
+
+
 /**
  * @struct ForwardRule
  * @brief 短信转发规则结构体
@@ -162,6 +164,9 @@ public:
      */
     bool updateAPConfig(const APConfig& config);
 
+    // STA配置管理
+    
+
     // 转发规则管理
     /**
      * @brief 添加转发规则
@@ -275,6 +280,11 @@ public:
      * @param enable 是否启用
      */
     void setDebugMode(bool enable);
+
+    /**
+     * @brief 执行WAL检查点，将WAL文件中的更改写入主数据库文件
+     */
+    void checkpoint();
 
 private:
     /**

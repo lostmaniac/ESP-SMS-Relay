@@ -1,11 +1,11 @@
 /**
- * @file wechat_channel.cpp
+ * @file wecom_channel.cpp
  * @brief 企业微信推送渠道实现
  * @author ESP-SMS-Relay Project
  * @date 2024
  */
 
-#include "wechat_channel.h"
+#include "wecom_channel.h"
 #include "../push_channel_registry.h"
 #include "../http_client/http_client.h"
 #include "../../../include/constants.h"
@@ -14,29 +14,29 @@
 /**
  * @brief 构造函数
  */
-WechatChannel::WechatChannel() {
+WecomChannel::WecomChannel() {
     debugMode = false;
 }
 
 /**
  * @brief 析构函数
  */
-WechatChannel::~WechatChannel() {
+WecomChannel::~WecomChannel() {
 }
 
 /**
  * @brief 获取渠道名称
  * @return String 渠道名称
  */
-String WechatChannel::getChannelName() const {
-    return "wechat";
+String WecomChannel::getChannelName() const {
+    return "wecom";
 }
 
 /**
  * @brief 获取渠道描述
  * @return String 渠道描述
  */
-String WechatChannel::getChannelDescription() const {
+String WecomChannel::getChannelDescription() const {
     return "企业微信机器人推送";
 }
 
@@ -46,7 +46,7 @@ String WechatChannel::getChannelDescription() const {
  * @param context 推送上下文
  * @return PushResult 推送结果
  */
-PushResult WechatChannel::push(const String& config, const PushContext& context) {
+PushResult WecomChannel::push(const String& config, const PushContext& context) {
     std::map<String, String> configMap = parseConfig(config);
     
     if (!validateConfig(configMap)) {
@@ -108,7 +108,7 @@ PushResult WechatChannel::push(const String& config, const PushContext& context)
  * @param testMessage 测试消息
  * @return PushResult 推送结果
  */
-PushResult WechatChannel::testConfig(const String& config, const String& testMessage) {
+PushResult WecomChannel::testConfig(const String& config, const String& testMessage) {
     PushContext testContext;
     testContext.sender = "测试号码";
     testContext.content = testMessage;
@@ -122,7 +122,7 @@ PushResult WechatChannel::testConfig(const String& config, const String& testMes
  * @brief 获取配置示例
  * @return PushChannelExample 配置示例
  */
-PushChannelExample WechatChannel::getConfigExample() const {
+PushChannelExample WecomChannel::getConfigExample() const {
     PushChannelExample example;
     example.channelName = "企业微信";
     example.description = "通过企业微信机器人推送短信通知";
@@ -145,7 +145,7 @@ PushChannelExample WechatChannel::getConfigExample() const {
  * @brief 获取最后的错误信息
  * @return String 错误信息
  */
-String WechatChannel::getLastError() const {
+String WecomChannel::getLastError() const {
     return lastError;
 }
 
@@ -153,7 +153,7 @@ String WechatChannel::getLastError() const {
  * @brief 启用调试模式
  * @param enable 是否启用
  */
-void WechatChannel::setDebugMode(bool enable) {
+void WecomChannel::setDebugMode(bool enable) {
     debugMode = enable;
 }
 
@@ -161,10 +161,10 @@ void WechatChannel::setDebugMode(bool enable) {
  * @brief 获取CLI演示代码
  * @return String CLI演示代码
  */
-String WechatChannel::getCliDemo() const {
+String WecomChannel::getCliDemo() const {
     String demo = "// 企业微信推送演示\n";
     demo += "void demoWechatPush() {\n";
-    demo += "    WechatChannel wechat;\n";
+    demo += "    WecomChannel wechat;\n";
     demo += "    wechat.setDebugMode(true);\n";
     demo += "    \n";
     demo += "    // 配置示例\n";
@@ -194,9 +194,9 @@ String WechatChannel::getCliDemo() const {
  * @brief 获取渠道帮助信息
  * @return PushChannelHelp 帮助信息
  */
-PushChannelHelp WechatChannel::getHelp() const {
+PushChannelHelp WecomChannel::getHelp() const {
     PushChannelHelp help;
-    help.channelName = "wechat";
+    help.channelName = "wecom";
     help.description = "企业微信机器人推送渠道，支持向企业微信群发送消息";
     
     help.configFields = "配置字段说明:\n"
@@ -231,7 +231,7 @@ PushChannelHelp WechatChannel::getHelp() const {
  * @param configMap 配置映射
  * @return bool 配置是否有效
  */
-bool WechatChannel::validateConfig(const std::map<String, String>& configMap) {
+bool WecomChannel::validateConfig(const std::map<String, String>& configMap) {
     auto it = configMap.find("webhook_url");
     
     // webhook_url现在是可选的，如果提供了则验证格式
@@ -252,7 +252,7 @@ bool WechatChannel::validateConfig(const std::map<String, String>& configMap) {
  * @param msgType 消息类型（text/markdown）
  * @return String JSON消息体
  */
-String WechatChannel::buildMessageBody(const String& message, const String& msgType) {
+String WecomChannel::buildMessageBody(const String& message, const String& msgType) {
     JsonDocument doc;
     doc["msgtype"] = msgType;
     
@@ -269,4 +269,4 @@ String WechatChannel::buildMessageBody(const String& message, const String& msgT
 }
 
 // 自动注册企业微信渠道
-REGISTER_PUSH_CHANNEL("wechat", WechatChannel, (std::vector<String>{"企业微信", "微信", "wework"}));
+REGISTER_PUSH_CHANNEL("wecom", WecomChannel, (std::vector<String>{"企业微信", "微信", "wework"}));

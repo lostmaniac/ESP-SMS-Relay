@@ -367,6 +367,8 @@ bool DatabaseManager::updateAPConfig(const APConfig& config) {
     return true;
 }
 
+
+
 /**
  * @brief 添加转发规则
  * @param rule 转发规则
@@ -952,6 +954,22 @@ bool DatabaseManager::createTables() {
         setError("创建AP配置表失败");
         return false;
     }
+
+    // 创建STA配置表
+    String createSTAConfigTable = 
+        "CREATE TABLE IF NOT EXISTS sta_config ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "ssid TEXT NOT NULL,"
+        "password TEXT NOT NULL,"
+        "enabled INTEGER DEFAULT 1,"
+        "created_at TEXT NOT NULL,"
+        "updated_at TEXT NOT NULL"
+        ")";
+
+    if (!executeSQL(createSTAConfigTable)) {
+        setError("创建STA配置表失败");
+        return false;
+    }
     
     // 创建转发规则表
     String createForwardRulesTable = 
@@ -1056,6 +1074,8 @@ bool DatabaseManager::initializeDefaultData() {
         }
         debugPrint("默认AP配置已创建");
     }
+
+    
     
     debugPrint("默认数据初始化完成");
     return true;
@@ -1153,4 +1173,26 @@ String DatabaseManager::getCurrentTimestamp() {
     // 在实际应用中，可以使用RTC或NTP时间
     unsigned long currentTime = millis();
     return String(currentTime);
+}
+
+/**
+ * @brief 执行WAL检查点，将WAL文件中的更改写入主数据库文件
+ */
+void DatabaseManager::checkpoint() {
+    std::lock_guard<std::mutex> lock(dbMutex);
+    if (!db) {
+        setError("数据库连接无效，无法执行检查点");
+        return;
+    }
+    debugPrint("执行WAL检查点...");
+    char* errMsg = nullptr;
+    int rc = sqlite3_wal_checkpoint(db, nullptr); // Pass nullptr for dbName to checkpoint all databases
+    if (rc != SQLITE_OK) {
+        setError("WAL检查点失败: " + String(sqlite3_errmsg(db)));
+        if (errMsg) {
+            sqlite3_free(errMsg);
+        }
+    } else {
+        debugPrint("WAL检查点成功");
+    }
 }

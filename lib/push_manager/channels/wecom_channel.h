@@ -7,8 +7,8 @@
  * 该文件实现企业微信机器人推送功能
  */
 
-#ifndef WECHAT_CHANNEL_H
-#define WECHAT_CHANNEL_H
+#ifndef WECOM_CHANNEL_H
+#define WECOM_CHANNEL_H
 
 #include "../push_channel_base.h"
 #include "../push_channel_registry.h"
@@ -19,17 +19,17 @@
  * 
  * 实现企业微信机器人推送功能
  */
-class WechatChannel : public PushChannelBase {
+class WecomChannel : public PushChannelBase {
 public:
     /**
      * @brief 构造函数
      */
-    WechatChannel();
+    WecomChannel();
 
     /**
      * @brief 析构函数
      */
-    virtual ~WechatChannel();
+    virtual ~WecomChannel();
 
     /**
      * @brief 获取渠道名称
@@ -106,4 +106,4 @@ private:
     String buildMessageBody(const String& message, const String& msgType = "text");
 };
 
-#endif // WECHAT_CHANNEL_H
+#endif // WECOM_CHANNEL_H

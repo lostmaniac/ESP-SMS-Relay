@@ -124,16 +124,6 @@ CarrierInfo CarrierConfig::getCarrierInfo(CarrierType carrierType) {
 }
 
 /**
- * @brief 根据IMSI获取运营商信息
- * @param imsi IMSI号码
- * @return CarrierInfo 运营商信息
- */
-CarrierInfo CarrierConfig::getCarrierInfoByImsi(const String& imsi) {
-    CarrierType carrierType = identifyCarrier(imsi);
-    return getCarrierInfo(carrierType);
-}
-
-/**
  * @brief 获取运营商名称
  * @param carrierType 运营商类型
  * @return String 运营商名称
@@ -141,26 +131,6 @@ CarrierInfo CarrierConfig::getCarrierInfoByImsi(const String& imsi) {
 String CarrierConfig::getCarrierName(CarrierType carrierType) {
     CarrierInfo info = getCarrierInfo(carrierType);
     return info.name;
-}
-
-/**
- * @brief 获取APN配置
- * @param carrierType 运营商类型
- * @return ApnConfig APN配置
- */
-ApnConfig CarrierConfig::getApnConfig(CarrierType carrierType) {
-    CarrierInfo info = getCarrierInfo(carrierType);
-    return info.apnConfig;
-}
-
-/**
- * @brief 获取短信中心号码
- * @param carrierType 运营商类型
- * @return String 短信中心号码
- */
-String CarrierConfig::getSmsCenterNumber(CarrierType carrierType) {
-    CarrierInfo info = getCarrierInfo(carrierType);
-    return info.smsCenterNumber;
 }
 
 /**

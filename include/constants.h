@@ -32,6 +32,11 @@
 #define DEFAULT_AP_CHANNEL 1
 #define DEFAULT_AP_MAX_CONNECTIONS 4
 
+/// STA 配置默认值 (用于首次启动时数据库为空的情况)
+#define DEFAULT_STA_SSID ""
+#define DEFAULT_STA_PASSWORD ""
+#define DEFAULT_STA_ENABLED 0
+
 /// 终端管理器配置
 #define MAX_FORWARD_RULES 50
 #define RULE_CACHE_SIZE 20

@@ -24,6 +24,8 @@
 #include "task_scheduler.h"
 #include "config.h"
 #include "constants.h"
+#include "wifi_manager_web.h"
+#include "web_server.h"
 
 // 全局管理器实例引用
 TerminalManager& terminalManager = TerminalManager::getInstance();
@@ -93,6 +95,27 @@ bool initializeSystem() {
     
     Serial.println("=== System Initialization Complete ===");
     return true;
+}
+
+/**
+ * @brief 初始化WiFi和Web服务器
+ */
+void initializeWifiAndWebServer() {
+    Serial.println("\n=== Initializing WiFi & Web Server ===");
+    WiFiManagerWeb& wifiManager = WiFiManagerWeb::getInstance();
+    if (wifiManager.connect()) {
+        // Connected to WiFi in STA mode
+        Serial.println("✓ WiFi connected in STA mode.");
+        Serial.println("  IP Address: " + wifiManager.getIPAddress());
+        WebServer::getInstance().start();
+    } else {
+        // In AP mode for configuration
+        Serial.println("✓ WiFi started in AP mode for configuration.");
+        Serial.println("  Connect to SSID: ESP-SMS-Relay-Setup");
+        Serial.println("  Go to http://" + wifiManager.getIPAddress() + " to configure.");
+        // Start web server for AP mode configuration
+        WebServer::getInstance().start(); // In a real scenario, we might have a different set of routes for AP mode
+    }
 }
 
 /**
@@ -236,8 +259,8 @@ void setup() {
     delay(1000);
     
     Serial.println("\n" + String('=', 50));
-    Serial.println("    ESP32 SMS Relay System with CLI");
-    Serial.println("    Version: 1.0.0");
+    Serial.println("    ESP32 SMS Relay System");
+    Serial.println("    Version: 1.1.0 (Web UI Enabled)");
     Serial.println("    Build: " + String(__DATE__) + " " + String(__TIME__));
     Serial.println(String('=', 50));
     
@@ -249,8 +272,8 @@ void setup() {
         }
     }
     
-    // 不再自动创建示例规则
-    // 用户可以通过CLI手动添加规则
+    // 初始化WiFi和Web服务器
+    initializeWifiAndWebServer();
     
     // 显示当前状态
     Serial.println("\n=== Current System Status ===");
@@ -261,12 +284,14 @@ void setup() {
     // 执行开机自动拨号功能
     performStartupCall();
     
-    // 启动CLI
+    // 启动CLI (作为备用接口)
     terminalManager.startCLI();
     
-    Serial.println("\n🚀 System Ready! Type 'help' for available commands.");
-    Serial.println("📝 CLI is now active and waiting for input...");
+    Serial.println("\n🚀 System Ready!");
+    Serial.println("   Web interface is now the primary management tool.");
+    Serial.println("   CLI is available for debugging.");
 }
+
 
 /**
  * @brief 主循环函数

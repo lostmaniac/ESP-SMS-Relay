@@ -152,30 +152,6 @@ int TaskScheduler::addOnceTask(const String& name, unsigned long delay, std::fun
 }
 
 /**
- * @brief 移除任务
- * @param taskId 任务ID
- * @return true 移除成功
- * @return false 移除失败
- */
-bool TaskScheduler::removeTask(int taskId) {
-    if (!initialized) {
-        setError("任务调度器未初始化");
-        return false;
-    }
-    
-    for (auto it = tasks.begin(); it != tasks.end(); ++it) {
-        if (it->id == taskId) {
-            debugPrint("移除任务: " + it->name + ", ID: " + String(taskId));
-            tasks.erase(it);
-            return true;
-        }
-    }
-    
-    setError("未找到任务ID: " + String(taskId));
-    return false;
-}
-
-/**
  * @brief 启用/禁用任务
  * @param taskId 任务ID
  * @param enabled 是否启用

@@ -13,7 +13,7 @@
 #include <ArduinoJson.h>
 
 // 包含所有推送渠道实现以触发自动注册
-#include "channels/wechat_channel.cpp"
+#include "channels/wecom_channel.cpp"
 #include "channels/wechat_official_channel.cpp"
 #include "channels/dingtalk_channel.cpp"
 #include "channels/webhook_channel.cpp"

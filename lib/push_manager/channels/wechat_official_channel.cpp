@@ -287,8 +287,11 @@ String WechatOfficialChannel::getAccessToken(const String& appId, const String& 
     debugPrint("获取access_token: " + url);
     
     HttpClient& httpClient = HttpClient::getInstance();
-    std::map<String, String> emptyHeaders;
-    HttpResponse response = httpClient.get(url, emptyHeaders, DEFAULT_HTTP_TIMEOUT_MS);
+    HttpRequest request;
+    request.url = url;
+    request.method = HTTP_CLIENT_GET;
+    request.timeout = DEFAULT_HTTP_TIMEOUT_MS;
+    HttpResponse response = httpClient.request(request);
     
     debugPrint("access_token响应 - 状态码: " + String(response.statusCode));
     debugPrint("响应内容: " + response.body);
