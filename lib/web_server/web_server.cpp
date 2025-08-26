@@ -291,11 +291,28 @@ void WebServer::handleDeleteRule(AsyncWebServerRequest *request, uint8_t *data, 
             return;
         }
 
+        // 参数校验
+        if (!doc.containsKey("id")) {
+            request->send(400, "text/plain", "Missing required field: id");
+            return;
+        }
+        
         int ruleId = doc["id"].as<int>();
-        if (DatabaseManager::getInstance().deleteForwardRule(ruleId)) {
-            request->send(200, "text/plain", "OK");
+        
+        // 校验规则ID的有效性
+        if (ruleId <= 0) {
+            request->send(400, "text/plain", "Invalid rule ID: must be positive integer");
+            return;
+        }
+        
+        DatabaseManager& dbManager = DatabaseManager::getInstance();
+        
+        // 使用带事务保护的删除方法
+        if (dbManager.deleteForwardRuleWithTransaction(ruleId)) {
+            request->send(200, "text/plain", "Rule deleted successfully");
         } else {
-            request->send(500, "text/plain", "Failed to delete rule");
+            String errorMsg = "Failed to delete rule: " + dbManager.getLastError();
+            request->send(500, "text/plain", errorMsg);
         }
     }
 }

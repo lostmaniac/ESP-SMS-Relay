@@ -280,6 +280,65 @@ public:
      * @param enable 是否启用
      */
     void setDebugMode(bool enable);
+    
+    /**
+     * @brief 检查数据库完整性
+     * @return true 数据库完整
+     * @return false 数据库损坏
+     */
+    bool checkDatabaseIntegrity();
+    
+    /**
+     * @brief 修复损坏的数据库
+     * @param backupPath 备份文件路径（可选）
+     * @return true 修复成功
+     * @return false 修复失败
+     */
+    bool repairDatabase(const String& backupPath = "");
+    
+    /**
+     * @brief 创建数据库备份
+     * @param backupPath 备份文件路径
+     * @return true 备份成功
+     * @return false 备份失败
+     */
+    bool createBackup(const String& backupPath);
+    
+    /**
+     * @brief 重建损坏的数据库
+     * @return true 重建成功
+     * @return false 重建失败
+     */
+    bool rebuildDatabase();
+    
+    /**
+     * @brief 开始事务
+     * @return true 开始成功
+     * @return false 开始失败
+     */
+    bool beginTransaction();
+    
+    /**
+     * @brief 提交事务
+     * @return true 提交成功
+     * @return false 提交失败
+     */
+    bool commitTransaction();
+    
+    /**
+     * @brief 回滚事务
+     * @return true 回滚成功
+     * @return false 回滚失败
+     */
+    bool rollbackTransaction();
+    
+    /**
+     * @brief 在事务中删除转发规则（带回滚保护）
+     * @param ruleId 规则ID
+     * @return true 删除成功
+     * @return false 删除失败
+     */
+    bool deleteForwardRuleWithTransaction(int ruleId);
 
 
 
@@ -353,6 +412,21 @@ private:
      * @return String 时间戳字符串
      */
     String getCurrentTimestamp();
+    
+    /**
+     * @brief 直接检查数据库完整性（不依赖isReady状态）
+     * @return true 数据库完整
+     * @return false 数据库损坏
+     */
+    bool checkDatabaseIntegrityDirect();
+    
+    /**
+     * @brief 直接修复损坏的数据库（不依赖isReady状态）
+     * @param backupPath 备份文件路径（可选）
+     * @return true 修复成功
+     * @return false 修复失败
+     */
+    bool repairDatabaseDirect(const String& backupPath = "");
 
 
 
