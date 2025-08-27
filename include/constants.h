@@ -13,7 +13,7 @@
 // ==================== 系统配置常量 ====================
 
 /// 系统版本信息
-#define SYSTEM_VERSION "1.0.0"
+#define SYSTEM_VERSION "1.1.0"
 #define SYSTEM_BUILD_YEAR 2024
 
 /// 默认配置值
