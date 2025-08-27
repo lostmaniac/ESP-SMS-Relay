@@ -155,46 +155,13 @@ jobs:
         name: esp-sms-relay-firmware-${{ steps.version.outputs.version }}
         path: ./artifacts
     
-    # 生成发布说明
-    - name: Generate release notes
-      id: release_notes
+    # 列出下载的文件（用于调试）
+    - name: List downloaded files
       run: |
-        echo "# ESP-SMS-Relay ${{ steps.version.outputs.version }}" > release-notes.md
-        echo "" >> release-notes.md
-        echo "## 🚀 新版本发布" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "这是 ESP-SMS-Relay 项目的 ${{ steps.version.outputs.version }} 版本发布。" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "## 📦 下载文件" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "- **esp-sms-relay-${{ steps.version.outputs.version }}.bin** - 主固件文件（用于烧录）" >> release-notes.md
-        echo "- **esp-sms-relay-${{ steps.version.outputs.version }}.elf** - 调试符号文件（用于调试）" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "## 🔧 安装说明" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "1. 下载 \`.bin\` 固件文件" >> release-notes.md
-        echo "2. 使用 esptool 或 PlatformIO 烧录到 ESP32-S3 设备" >> release-notes.md
-        echo "3. 参考项目 README 进行配置" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "## 🛠️ 硬件支持" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "- ESP32-S3 系列开发板" >> release-notes.md
-        echo "- 微雪 ESP32-S3-A7670E-4G 开发板（推荐）" >> release-notes.md
-        echo "- 支持太阳能供电系统" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "## 📋 主要功能" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "- 📱 SMS 接收和转发" >> release-notes.md
-        echo "- 🤖 多平台机器人支持（企业微信、钉钉、飞书）" >> release-notes.md
-        echo "- 🌐 Web 管理界面" >> release-notes.md
-        echo "- 🔋 太阳能供电支持" >> release-notes.md
-        echo "- 📊 数据库管理" >> release-notes.md
-        echo "- 🔒 权限隔离管理" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "---" >> release-notes.md
-        echo "" >> release-notes.md
-        echo "**构建时间**: $(date +'%Y-%m-%d %H:%M:%S UTC')" >> release-notes.md
-        echo "**提交哈希**: $GITHUB_SHA" >> release-notes.md
+        echo "下载的构建产物:"
+        ls -la ./artifacts/
+        echo "当前目录内容:"
+        ls -la ./
     
     # 创建Release
     - name: Create Release
@@ -202,13 +169,11 @@ jobs:
       with:
         tag_name: ${{ steps.version.outputs.version }}
         name: ESP-SMS-Relay ${{ steps.version.outputs.version }}
-        body_path: release-notes.md
         draft: false
         prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
         files: |
-          artifacts/esp-sms-relay-*.bin
-          artifacts/esp-sms-relay-*.elf
-          artifacts/build-info.txt
+          ./artifacts/esp-sms-relay-*.bin
+          ./artifacts/esp-sms-relay-*.elf
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
