@@ -35,31 +35,27 @@ void WebServer::stop() {
 
 // --- Route Setup ---
 void WebServer::setupRoutes() {
-    // Static content
-    server->on("/", HTTP_GET, WebServer::handleRoot);
-    server->on("/style.css", HTTP_GET, WebServer::handleStyle);
-    server->on("/script.js", HTTP_GET, WebServer::handleScript);
-
-    // API routes
-    server->on("/api/rules", HTTP_GET, WebServer::handleGetRules);
-    server->on("/api/sms_history", HTTP_GET, WebServer::handleGetSmsHistory);
+    // API routes with body parsers - longest paths first
     server->on("/api/docs/forward_rules", HTTP_GET, WebServer::handleGetDocsGuide);
-    server->on("/api/logs", HTTP_GET, WebServer::handleGetLogs);
-    server->on("/api/reboot", HTTP_POST, WebServer::handleReboot);
-    server->on("/api/push_channels", HTTP_GET, WebServer::handleGetPushChannels);
+    server->on("/api/database/execute", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleExecuteSQL);
     server->on("/api/wifi/ap_settings", HTTP_GET, WebServer::handleGetAPSettings);
-
-    // API routes with body parsers
-    server->on("/api/rules", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleAddRule);
+    server->on("/api/wifi/ap_settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateAPSettings);
     server->on("/api/rules/update", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateRule);
     server->on("/api/rules/delete", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleDeleteRule);
-    server->on("/api/wifi/ap_settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateAPSettings);
     
-    // Database maintenance routes
-    server->on("/api/database/execute", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleExecuteSQL);
-
-    // AP Mode routes
+    // API routes - medium length paths
+    server->on("/api/push_channels", HTTP_GET, WebServer::handleGetPushChannels);
+    server->on("/api/sms_history", HTTP_GET, WebServer::handleGetSmsHistory);
+    server->on("/api/rules", HTTP_GET, WebServer::handleGetRules);
+    server->on("/api/rules", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleAddRule);
+    server->on("/api/reboot", HTTP_POST, WebServer::handleReboot);
+    server->on("/api/logs", HTTP_GET, WebServer::handleGetLogs);
+    
+    // Static content - shorter paths
+    server->on("/style.css", HTTP_GET, WebServer::handleStyle);
+    server->on("/script.js", HTTP_GET, WebServer::handleScript);
     server->on("/connect", HTTP_POST, WebServer::handleConnect);
+    server->on("/", HTTP_GET, WebServer::handleRoot);
     
     // Not found
     server->onNotFound(WebServer::handleNotFound);
