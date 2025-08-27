@@ -27,7 +27,7 @@ examples/
 └── terminal_cli_example.cpp    # 使用示例
 
 test/
-└── test_terminal_manager.cpp   # 单元测试
+└── terminal_manager.cpp        # 终端管理器实现
 
 docs/
 ├── TERMINAL_MANAGER_FEATURE_PLAN.md  # 功能规划文档

@@ -7,6 +7,7 @@
 
 #include "config_manager.h"
 #include "../../include/constants.h"
+#include "../../include/config.h"
 #include <Arduino.h>
 
 /**
@@ -184,7 +185,7 @@ bool ConfigManager::validateConfig() {
  */
 void ConfigManager::setDefaultConfig() {
     // 串口默认配置
-    uartConfig.baudRate = SIM_SERIAL_BAUD_RATE;
+    uartConfig.baudRate = SIM_BAUD_RATE;
     uartConfig.rxPin = 16;
     uartConfig.txPin = 17;
     uartConfig.serialNumber = 2;

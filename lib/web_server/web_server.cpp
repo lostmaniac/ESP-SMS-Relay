@@ -54,6 +54,9 @@ void WebServer::setupRoutes() {
     server->on("/api/rules/update", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateRule);
     server->on("/api/rules/delete", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleDeleteRule);
     server->on("/api/wifi/ap_settings", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleUpdateAPSettings);
+    
+    // Database maintenance routes
+    server->on("/api/database/execute", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleExecuteSQL);
 
     // AP Mode routes
     server->on("/connect", HTTP_POST, WebServer::handleConnect);
@@ -344,4 +347,93 @@ void WebServer::handleAPRoot(AsyncWebServerRequest *request) {
 void WebServer::handleConnect(AsyncWebServerRequest *request) {
     // This should be implemented to handle WiFi connection
     request->send(200, "text/plain", "Connecting...");
+}
+
+
+
+void WebServer::handleExecuteSQL(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (index == 0) {
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, (const char*)data, len);
+        if (error) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        // 参数校验
+        if (!doc.containsKey("sql")) {
+            request->send(400, "application/json", "{\"success\":false,\"error\":\"Missing required field: sql\"}");
+            return;
+        }
+        
+        String sqlCommand = doc["sql"].as<String>();
+        
+        // 基本的SQL注入防护 - 检查危险关键字
+        String sqlLower = sqlCommand;
+        sqlLower.toLowerCase();
+        
+        // 禁止的危险操作
+        if (sqlLower.indexOf("drop table") >= 0 || 
+            sqlLower.indexOf("drop database") >= 0 ||
+            sqlLower.indexOf("truncate") >= 0 ||
+            sqlLower.indexOf("delete from") >= 0 ||
+            sqlLower.indexOf("alter table") >= 0) {
+            request->send(403, "application/json", "{\"success\":false,\"error\":\"Dangerous SQL operations are not allowed\"}");
+            return;
+        }
+        
+        // 记录执行开始时间
+        unsigned long startTime = millis();
+        
+        DatabaseManager& dbManager = DatabaseManager::getInstance();
+        
+        JsonDocument responseDoc;
+        
+        // 判断是否为查询语句
+        if (sqlLower.startsWith("select") || sqlLower.startsWith("pragma")) {
+            // 执行查询
+            std::vector<std::map<String, String>> results = dbManager.executeQuery(sqlCommand);
+            
+            if (results.empty() && !dbManager.getLastError().isEmpty()) {
+                // 查询出错
+                responseDoc["success"] = false;
+                responseDoc["error"] = dbManager.getLastError();
+            } else {
+                // 查询成功
+                responseDoc["success"] = true;
+                responseDoc["type"] = "query";
+                responseDoc["rowCount"] = results.size();
+                
+                JsonArray dataArray = responseDoc["data"].to<JsonArray>();
+                for (const auto& row : results) {
+                    JsonObject rowObj = dataArray.add<JsonObject>();
+                    for (const auto& pair : row) {
+                        rowObj[pair.first] = pair.second;
+                    }
+                }
+            }
+        } else {
+            // 执行非查询语句（INSERT, UPDATE等）
+            bool success = dbManager.executeSQL(sqlCommand);
+            
+            if (success) {
+                responseDoc["success"] = true;
+                responseDoc["type"] = "execute";
+                responseDoc["message"] = "SQL executed successfully";
+                // 注意：SQLite不直接提供affected rows，这里简化处理
+                responseDoc["affectedRows"] = "N/A";
+            } else {
+                responseDoc["success"] = false;
+                responseDoc["error"] = dbManager.getLastError();
+            }
+        }
+        
+        // 计算执行耗时
+        unsigned long executionTime = millis() - startTime;
+        responseDoc["executionTime"] = executionTime;
+        
+        String response;
+        serializeJson(responseDoc, response);
+        request->send(200, "application/json", response);
+    }
 }

@@ -339,6 +339,21 @@ public:
      * @return false 删除失败
      */
     bool deleteForwardRuleWithTransaction(int ruleId);
+    
+    /**
+     * @brief 执行查询SQL并返回结果
+     * @param sql SQL查询语句
+     * @return std::vector<std::map<String, String>> 查询结果
+     */
+    std::vector<std::map<String, String>> executeQuery(const String& sql);
+    
+    /**
+     * @brief 执行SQL语句（公共接口）
+     * @param sql SQL语句
+     * @return true 执行成功
+     * @return false 执行失败
+     */
+    bool executeSQL(const String& sql);
 
 
 
@@ -378,12 +393,12 @@ private:
     bool initializeDefaultData();
 
     /**
-     * @brief 执行SQL语句
+     * @brief 执行SQL语句（私有方法）
      * @param sql SQL语句
      * @return true 执行成功
      * @return false 执行失败
      */
-    bool executeSQL(const String& sql);
+    bool executeSQLPrivate(const String& sql);
 
     /**
      * @brief 执行查询SQL语句

@@ -19,6 +19,7 @@ const char HTML_CONTENT[] PROGMEM = R"rawliteral(
                 <a href="#" onclick="showPage('sms_history')">短信历史</a>
                 <a href="#" onclick="showPage('logs')">系统日志</a>
                 <a href="#" onclick="showPage('status')">系统状态</a>
+                <a href="#" onclick="showPage('database')">数据库工具</a>
                 <a href="#" onclick="showPage('help')">配置指南</a>
                 <a href="#" onclick="showPage('wifi_settings')">WiFi设置</a>
             </div>

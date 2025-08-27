@@ -189,10 +189,6 @@
 
 // ==================== 硬件配置常量 ====================
 
-/// 串口配置
-#define SIM_SERIAL_BAUD_RATE 115200
-#define DEBUG_SERIAL_BAUD_RATE 115200
-
 /// GPIO引脚（根据实际硬件配置）
 #define SIM_POWER_PIN 4
 #define SIM_RESET_PIN 5

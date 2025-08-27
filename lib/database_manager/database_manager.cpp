@@ -156,28 +156,28 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
     
     // 配置SQLite以优化ESP32-S3的内存使用
     // 设置页面大小为1KB（适合ESP32的内存特性）
-    executeSQL("PRAGMA page_size = 1024");
+    executeSQLPrivate("PRAGMA page_size = 1024");
     
     // 设置缓存大小（页面数量，1000页 = 1MB缓存）
-    executeSQL("PRAGMA cache_size = 1000");
+    executeSQLPrivate("PRAGMA cache_size = 1000");
     
     // 设置临时存储为内存模式
-    executeSQL("PRAGMA temp_store = MEMORY");
+    executeSQLPrivate("PRAGMA temp_store = MEMORY");
     
     // 设置日志模式为DELETE（默认模式）
-    executeSQL("PRAGMA journal_mode = DELETE");
+    executeSQLPrivate("PRAGMA journal_mode = DELETE");
     
     // 设置同步模式为NORMAL（平衡性能和安全性）
-    executeSQL("PRAGMA synchronous = NORMAL");
+    executeSQLPrivate("PRAGMA synchronous = NORMAL");
     
     // 设置内存映射大小（限制为256KB以避免PSRAM问题）
-    executeSQL("PRAGMA mmap_size = 262144");
+    executeSQLPrivate("PRAGMA mmap_size = 262144");
     
     // 启用外键约束
-    executeSQL("PRAGMA foreign_keys = ON");
+    executeSQLPrivate("PRAGMA foreign_keys = ON");
     
     // 设置自动清理
-    executeSQL("PRAGMA auto_vacuum = INCREMENTAL");
+    executeSQLPrivate("PRAGMA auto_vacuum = INCREMENTAL");
     
     debugPrint("SQLite配置完成");
     dbInfo.isOpen = true;
@@ -1118,7 +1118,7 @@ bool DatabaseManager::repairDatabase(const String& backupPath) {
     
     // 尝试使用VACUUM命令修复数据库
     debugPrint("执行VACUUM命令修复数据库");
-    if (!executeSQL("VACUUM")) {
+    if (!executeSQLPrivate("VACUUM")) {
         debugPrint("VACUUM修复失败，尝试重建数据库");
         
         // 如果VACUUM失败，尝试重建数据库
@@ -1221,7 +1221,7 @@ bool DatabaseManager::beginTransaction() {
     }
     
     debugPrint("开始事务");
-    return executeSQL("BEGIN TRANSACTION");
+    return executeSQLPrivate("BEGIN TRANSACTION");
 }
 
 /**
@@ -1236,7 +1236,7 @@ bool DatabaseManager::commitTransaction() {
     }
     
     debugPrint("提交事务");
-    return executeSQL("COMMIT");
+    return executeSQLPrivate("COMMIT");
 }
 
 /**
@@ -1251,7 +1251,7 @@ bool DatabaseManager::rollbackTransaction() {
     }
     
     debugPrint("回滚事务");
-    return executeSQL("ROLLBACK");
+    return executeSQLPrivate("ROLLBACK");
 }
 
 /**
@@ -1344,7 +1344,7 @@ bool DatabaseManager::createTables() {
         "updated_at TEXT NOT NULL"
         ")";
     
-    if (!executeSQL(createAPConfigTable)) {
+    if (!executeSQLPrivate(createAPConfigTable)) {
         setError("创建AP配置表失败");
         return false;
     }
@@ -1366,7 +1366,7 @@ bool DatabaseManager::createTables() {
         "updated_at TEXT DEFAULT CURRENT_TIMESTAMP"
         ")";
     
-    if (!executeSQL(createForwardRulesTable)) {
+    if (!executeSQLPrivate(createForwardRulesTable)) {
         setError("创建转发规则表失败");
         return false;
     }
@@ -1385,16 +1385,16 @@ bool DatabaseManager::createTables() {
         "received_at INTEGER NOT NULL"
         ")";
     
-    if (!executeSQL(createSMSRecordsTable)) {
+    if (!executeSQLPrivate(createSMSRecordsTable)) {
         setError("创建短信记录表失败");
         return false;
     }
     
     // 创建索引
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_forward_rules_enabled ON forward_rules(enabled)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_from_number ON sms_records(from_number)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_content ON sms_records(content)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_received_at ON sms_records(received_at)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_forward_rules_enabled ON forward_rules(enabled)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_from_number ON sms_records(from_number)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_content ON sms_records(content)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_received_at ON sms_records(received_at)");
     
     debugPrint("数据库表创建完成");
     return true;
@@ -1514,12 +1514,12 @@ bool DatabaseManager::initializeDefaultData() {
 }
 
 /**
- * @brief 执行SQL语句
+ * @brief 执行SQL语句（私有方法）
  * @param sql SQL语句
  * @return true 执行成功
  * @return false 执行失败
  */
-bool DatabaseManager::executeSQL(const String& sql) {
+bool DatabaseManager::executeSQLPrivate(const String& sql) {
     std::lock_guard<std::mutex> lock(dbMutex);
     
     if (!db) {
@@ -1542,6 +1542,80 @@ bool DatabaseManager::executeSQL(const String& sql) {
     }
     
     return true;
+}
+
+/**
+ * @brief 执行SQL语句（公共接口）
+ * @param sql SQL语句
+ * @return true 执行成功
+ * @return false 执行失败
+ */
+bool DatabaseManager::executeSQL(const String& sql) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    return executeSQLPrivate(sql);
+}
+
+/**
+ * @brief 执行查询SQL并返回结果
+ * @param sql SQL查询语句
+ * @return std::vector<std::map<String, String>> 查询结果
+ */
+std::vector<std::map<String, String>> DatabaseManager::executeQuery(const String& sql) {
+    std::vector<std::map<String, String>> results;
+    
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return results;
+    }
+    
+    std::lock_guard<std::mutex> lock(dbMutex);
+    
+    if (!db) {
+        setError("数据库连接无效");
+        return results;
+    }
+    
+    debugPrint("执行查询: " + sql);
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    
+    if (rc != SQLITE_OK) {
+        setError("SQL准备失败: " + String(sqlite3_errmsg(db)));
+        return results;
+    }
+    
+    // 获取列数
+    int columnCount = sqlite3_column_count(stmt);
+    
+    // 执行查询并收集结果
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        std::map<String, String> row;
+        
+        for (int i = 0; i < columnCount; i++) {
+            String columnName = String(sqlite3_column_name(stmt, i));
+            
+            // 安全地获取列值，检查空指针
+            const char* columnText = (const char*)sqlite3_column_text(stmt, i);
+            String columnValue = columnText ? String(columnText) : "";
+            
+            row[columnName] = columnValue;
+        }
+        
+        results.push_back(row);
+    }
+    
+    if (rc != SQLITE_DONE) {
+        setError("查询执行失败: " + String(sqlite3_errmsg(db)));
+        results.clear();
+    }
+    
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 /**
@@ -1694,7 +1768,7 @@ bool DatabaseManager::repairDatabaseDirect(const String& backupPath) {
     
     // 尝试使用VACUUM命令修复数据库
     debugPrint("执行VACUUM命令修复数据库");
-    if (!executeSQL("VACUUM")) {
+    if (!executeSQLPrivate("VACUUM")) {
         debugPrint("VACUUM修复失败，尝试重建数据库");
         
         // 如果VACUUM失败，尝试重建数据库

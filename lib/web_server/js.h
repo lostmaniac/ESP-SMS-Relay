@@ -20,6 +20,8 @@ function showPage(page) {
         loadLogs();
     } else if (page === 'status') {
         loadStatus();
+    } else if (page === 'database') {
+        loadDatabase();
     } else if (page === 'help') {
         loadHelpPage();
     } else if (page === 'wifi_settings') {
@@ -304,6 +306,222 @@ async function deleteRule(ruleId) {
 
 function loadLogs() { document.getElementById('content').innerHTML = '<h2>系统日志</h2><p>此功能待实现。</p>'; }
 function loadStatus() { document.getElementById('content').innerHTML = '<h2>系统状态</h2><p>此功能待实现。</p>'; }
+
+function loadDatabase() {
+    const content = document.getElementById('content');
+    let html = `
+        <h2>数据库维护工具</h2>
+        
+        <div class="message warning" style="background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; margin: 1rem 0; padding: 0.8rem; border-radius: 4px;">
+            <strong>警告：</strong> 此工具允许直接执行SQL命令，请谨慎使用。为了安全，已禁用DROP、DELETE、TRUNCATE、ALTER等危险操作。
+        </div>
+
+        <div class="sql-editor-container" style="margin-bottom: 1rem;">
+            <label for="sql-editor">SQL 命令：</label>
+            <textarea id="sql-editor" class="sql-editor" placeholder="请输入SQL命令...\n\n示例：\nSELECT * FROM forward_rules LIMIT 10;\nSELECT COUNT(*) FROM sms_records;\nPRAGMA table_info(forward_rules);" style="width: 100%; min-height: 200px; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; font-family: 'Courier New', Courier, monospace; font-size: 14px; resize: vertical; background-color: #f8f9fa; box-sizing: border-box;"></textarea>
+        </div>
+
+        <div class="button-group" style="margin: 1rem 0; display: flex; gap: 10px;">
+            <button id="execute-btn" onclick="executeSQL()">执行 SQL</button>
+            <button class="secondary" onclick="clearDatabaseEditor()" style="background-color: #6c757d;">清空</button>
+            <button class="secondary" onclick="formatSQL()" style="background-color: #6c757d;">格式化</button>
+        </div>
+
+        <div id="db-loading" class="loading" style="display: none; color: #007bff;">执行中...</div>
+        
+        <div id="db-execution-info" class="execution-info" style="display: none; margin: 1rem 0; padding: 0.5rem; background-color: #e9ecef; border-radius: 4px; font-size: 0.9rem;">
+            <span id="db-execution-time"></span> | 
+            <span id="db-row-count"></span>
+        </div>
+
+        <div id="db-message-container"></div>
+
+        <div id="db-results-container" class="results-container" style="display: none; margin-top: 1rem;">
+            <h3>执行结果</h3>
+            <div id="db-results-content"></div>
+        </div>
+
+        <div class="sql-examples" style="margin-top: 2rem; padding: 1rem; background-color: #f8f9fa; border-radius: 4px;">
+            <h3 style="margin-top: 0;">常用 SQL 示例</h3>
+            <p>点击下方示例可快速填入编辑器：</p>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+SELECT * FROM forward_rules LIMIT 10;
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+SELECT COUNT(*) as total_rules FROM forward_rules;
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+SELECT * FROM sms_records ORDER BY received_at DESC LIMIT 20;
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+SELECT COUNT(*) as total_sms FROM sms_records;
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+PRAGMA table_info(forward_rules);
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+PRAGMA table_info(sms_records);
+            </div>
+            
+            <div class="example-sql" onclick="insertDatabaseExample(this.textContent)" style="background-color: #e9ecef; padding: 0.5rem; margin: 0.5rem 0; border-radius: 3px; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; cursor: pointer;">
+SELECT name FROM sqlite_master WHERE type='table';
+            </div>
+        </div>
+    `;
+    content.innerHTML = html;
+}
+
+function executeSQL() {
+    const sqlEditor = document.getElementById('sql-editor');
+    const sqlCommand = sqlEditor.value.trim();
+    
+    if (!sqlCommand) {
+        showDatabaseMessage('请输入SQL命令', 'error');
+        return;
+    }
+    
+    // 二次确认
+    if (!confirm('确定要执行此SQL命令吗？\n\n' + sqlCommand)) {
+        return;
+    }
+    
+    const executeBtn = document.getElementById('execute-btn');
+    const loading = document.getElementById('db-loading');
+    
+    executeBtn.disabled = true;
+    loading.style.display = 'block';
+    
+    fetch('/api/database/execute', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sql: sqlCommand })
+    })
+    .then(response => response.json())
+    .then(data => {
+        executeBtn.disabled = false;
+        loading.style.display = 'none';
+        
+        if (data.success) {
+            showDatabaseExecutionInfo(data.executionTime, data.rowCount || data.affectedRows);
+            
+            if (data.type === 'query' && data.data) {
+                showDatabaseQueryResults(data.data);
+                showDatabaseMessage('查询执行成功', 'success');
+            } else {
+                showDatabaseMessage(data.message || 'SQL执行成功', 'success');
+                hideDatabaseResults();
+            }
+        } else {
+            showDatabaseMessage('执行失败: ' + data.error, 'error');
+            hideDatabaseResults();
+        }
+    })
+    .catch(error => {
+        executeBtn.disabled = false;
+        loading.style.display = 'none';
+        showDatabaseMessage('网络错误: ' + error.message, 'error');
+        hideDatabaseResults();
+    });
+}
+
+function showDatabaseMessage(message, type) {
+    const container = document.getElementById('db-message-container');
+    const messageClass = type === 'success' ? 'message success' : type === 'error' ? 'message error' : 'message';
+    const bgColor = type === 'success' ? '#d4edda' : type === 'error' ? '#f8d7da' : '#fff3cd';
+    const textColor = type === 'success' ? '#155724' : type === 'error' ? '#721c24' : '#856404';
+    const borderColor = type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : '#ffeaa7';
+    
+    container.innerHTML = `<div class="${messageClass}" style="background-color: ${bgColor}; color: ${textColor}; border: 1px solid ${borderColor}; margin: 1rem 0; padding: 0.8rem; border-radius: 4px;">${message}</div>`;
+}
+
+function showDatabaseExecutionInfo(executionTime, rowCount) {
+    const infoDiv = document.getElementById('db-execution-info');
+    const timeSpan = document.getElementById('db-execution-time');
+    const countSpan = document.getElementById('db-row-count');
+    
+    timeSpan.textContent = `执行耗时: ${executionTime}ms`;
+    countSpan.textContent = `影响行数: ${rowCount || 'N/A'}`;
+    infoDiv.style.display = 'block';
+}
+
+function showDatabaseQueryResults(data) {
+    const container = document.getElementById('db-results-container');
+    const content = document.getElementById('db-results-content');
+    
+    if (!data || data.length === 0) {
+        content.innerHTML = '<p>查询结果为空</p>';
+        container.style.display = 'block';
+        return;
+    }
+    
+    // 构建表格
+    const columns = Object.keys(data[0]);
+    let html = '<table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">';
+    
+    // 表头
+    html += '<thead style="background-color: #e9ecef;"><tr>';
+    columns.forEach(col => {
+        html += `<th style="padding: 0.8rem; text-align: left; border-bottom: 1px solid #ddd;">${col}</th>`;
+    });
+    html += '</tr></thead>';
+    
+    // 表体
+    html += '<tbody>';
+    data.forEach(row => {
+        html += '<tr>';
+        columns.forEach(col => {
+            const value = row[col] || '';
+            html += `<td style="padding: 0.8rem; text-align: left; border-bottom: 1px solid #ddd; word-wrap: break-word; max-width: 200px;" title="${value}">${value}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    
+    content.innerHTML = html;
+    container.style.display = 'block';
+}
+
+function hideDatabaseResults() {
+    document.getElementById('db-results-container').style.display = 'none';
+}
+
+function clearDatabaseEditor() {
+    document.getElementById('sql-editor').value = '';
+    document.getElementById('db-message-container').innerHTML = '';
+    hideDatabaseResults();
+    document.getElementById('db-execution-info').style.display = 'none';
+}
+
+function formatSQL() {
+    const editor = document.getElementById('sql-editor');
+    let sql = editor.value.trim();
+    
+    if (!sql) return;
+    
+    // 简单的SQL格式化
+    sql = sql.replace(/\s+/g, ' ');
+    sql = sql.replace(/;\s*/g, ';\n');
+    sql = sql.replace(/\bSELECT\b/gi, 'SELECT');
+    sql = sql.replace(/\bFROM\b/gi, '\nFROM');
+    sql = sql.replace(/\bWHERE\b/gi, '\nWHERE');
+    sql = sql.replace(/\bORDER BY\b/gi, '\nORDER BY');
+    sql = sql.replace(/\bGROUP BY\b/gi, '\nGROUP BY');
+    sql = sql.replace(/\bLIMIT\b/gi, '\nLIMIT');
+    
+    editor.value = sql;
+}
+
+function insertDatabaseExample(sql) {
+    document.getElementById('sql-editor').value = sql.trim();
+}
 
 )rawliteral";
 

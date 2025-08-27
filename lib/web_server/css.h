@@ -12,6 +12,9 @@ th, td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #ddd; }
 thead { background-color: #e9ecef; }
 button { background-color: #007bff; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 5px; cursor: pointer; font-size: 1rem; }
 button:hover { background-color: #0056b3; }
+button.secondary:hover { background-color: #5a6268; }
+button:disabled { background-color: #6c757d; cursor: not-allowed; }
+.example-sql:hover { background-color: #dee2e6; }
 .action-buttons button { margin-right: 5px; }
 .modal { display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
 .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; }
