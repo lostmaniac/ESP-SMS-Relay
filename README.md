@@ -572,7 +572,7 @@ private:
 pio test
 
 # 运行特定测试
-pio test --filter test_database_manager
+pio test --filter test_module_name
 ```
 
 ### 2. 功能测试

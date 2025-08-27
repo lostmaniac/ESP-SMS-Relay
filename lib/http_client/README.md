@@ -468,8 +468,9 @@ void enableDebugMode() {
 
 ## 测试文件
 
-📁 **可用的测试文件**
-- `test/test_http_client.cpp` - 单元测试
+📁 **测试方法**
+- 可通过CLI命令进行功能测试
+- 支持通过串口监控进行调试
 
 ## 示例代码
 

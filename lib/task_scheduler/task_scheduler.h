@@ -96,14 +96,6 @@ public:
     int addOnceTask(const String& name, unsigned long delay, std::function<void()> callback);
 
     /**
-     * @brief 移除任务
-     * @param taskId 任务ID
-     * @return true 移除成功
-     * @return false 移除失败
-     */
-    bool removeTask(int taskId);
-
-    /**
      * @brief 启用/禁用任务
      * @param taskId 任务ID
      * @param enabled 是否启用

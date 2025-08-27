@@ -205,7 +205,7 @@ Serial.println(scheduler.getAllTasksInfo());
 
 ## 测试验证
 
-系统提供了测试程序 `test/test_database_cleanup.cpp` 用于验证清理功能：
+数据库清理功能已集成到系统中，可通过以下方式验证：
 
 ```cpp
 // 创建测试记录

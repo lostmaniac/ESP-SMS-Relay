@@ -13,7 +13,7 @@ push_manager/
 ├── push_channel_base.h/cpp      # 推送渠道基类
 ├── push_channel_factory.h/cpp   # 推送渠道工厂
 ├── push_manager.h/cpp           # 推送管理器
-├── wechat_channel.h/cpp         # 企业微信推送渠道
+├── wecom_channel.h/cpp         # 企业微信推送渠道
 ├── dingtalk_channel.h/cpp       # 钉钉推送渠道
 ├── webhook_channel.h/cpp        # Webhook推送渠道
 ├── push_cli_demo.h/cpp          # CLI演示程序
@@ -31,7 +31,7 @@ push_manager/
 
 ### 支持的推送渠道
 
-- **企业微信 (wechat)**: 支持企业微信群机器人推送
+- **企业微信 (wecom)**: 支持企业微信群机器人推送
 - **钉钉 (dingtalk)**: 支持钉钉群机器人推送（含签名验证）
 - **Webhook (webhook)**: 支持通用HTTP Webhook推送
 
@@ -87,7 +87,7 @@ String wechatConfig = R"({
     "message_template": "收到来自 {sender} 的短信：{content}"
 })";
 
-bool result = manager.testPushConfig("wechat", wechatConfig);
+bool result = manager.testPushConfig("wecom", wechatConfig);
 if (result) {
     Serial.println("配置测试成功");
 } else {
@@ -125,7 +125,7 @@ void setup() {
 
 ## 配置示例
 
-### 企业微信配置
+### 企业微信 (WeCom) 配置
 
 ```json
 {

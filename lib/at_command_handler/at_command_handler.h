@@ -144,32 +144,6 @@ public:
      * @return AtCommandHandler& 单例引用
      */
     static AtCommandHandler& getInstance();
-    
-    /**
-     * @brief 执行AT命令诊断
-     * @return String 诊断结果报告
-     */
-    String performDiagnostic();
-    
-    /**
-     * @brief 分析AT命令错误
-     * @param command 失败的命令
-     * @param response 错误响应
-     * @return String 错误分析结果
-     */
-    String analyzeCommandError(const String& command, const String& response);
-    
-    /**
-     * @brief 检查设备状态
-     * @return String 设备状态报告
-     */
-    String checkDeviceStatus();
-    
-    /**
-     * @brief 获取详细的错误统计信息
-     * @return String 错误统计报告
-     */
-    String getErrorStatistics();
 
 private:
     HardwareSerial& serialPort; ///< 串口对象引用

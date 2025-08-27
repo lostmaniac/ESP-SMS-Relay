@@ -32,6 +32,11 @@
 #define DEFAULT_AP_CHANNEL 1
 #define DEFAULT_AP_MAX_CONNECTIONS 4
 
+/// STA 配置默认值 (用于首次启动时数据库为空的情况)
+#define DEFAULT_STA_SSID ""
+#define DEFAULT_STA_PASSWORD ""
+#define DEFAULT_STA_ENABLED 0
+
 /// 终端管理器配置
 #define MAX_FORWARD_RULES 50
 #define RULE_CACHE_SIZE 20
@@ -183,10 +188,6 @@
 #define API_TOKEN_LENGTH 32
 
 // ==================== 硬件配置常量 ====================
-
-/// 串口配置
-#define SIM_SERIAL_BAUD_RATE 115200
-#define DEBUG_SERIAL_BAUD_RATE 115200
 
 /// GPIO引脚（根据实际硬件配置）
 #define SIM_POWER_PIN 4

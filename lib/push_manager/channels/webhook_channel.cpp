@@ -94,15 +94,25 @@ PushResult WebhookChannel::push(const String& config, const PushContext& context
     HttpClient& httpClient = HttpClient::getInstance();
     HttpResponse response;
     
-    if (method.equalsIgnoreCase("POST") || method.equalsIgnoreCase("PUT")) {
-        // PUT请求也使用POST方法发送，因为HttpClient不支持PUT
-        response = httpClient.post(webhookUrl, messageBody, headers, DEFAULT_HTTP_TIMEOUT_MS);
+    HttpRequest httpRequest;
+    httpRequest.url = webhookUrl;
+    httpRequest.headers = headers;
+    httpRequest.timeout = DEFAULT_HTTP_TIMEOUT_MS;
+
+    if (method.equalsIgnoreCase("POST")) {
+        httpRequest.method = HTTP_CLIENT_POST;
+        httpRequest.body = messageBody;
+    } else if (method.equalsIgnoreCase("PUT")) {
+        httpRequest.method = HTTP_CLIENT_PUT;
+        httpRequest.body = messageBody;
     } else if (method.equalsIgnoreCase("GET")) {
-        response = httpClient.get(webhookUrl, headers, DEFAULT_HTTP_TIMEOUT_MS);
+        httpRequest.method = HTTP_CLIENT_GET;
     } else {
         setError("不支持的HTTP方法: " + method + "，仅支持POST、GET和PUT");
         return PUSH_CONFIG_ERROR;
     }
+
+    response = httpClient.request(httpRequest);
     
     debugPrint("Webhook响应 - 状态码: " + String(response.statusCode) + ", 错误码: " + String(response.error));
     debugPrint("响应内容: " + response.body);

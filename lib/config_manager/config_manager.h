@@ -204,6 +204,18 @@ private:
      * @param error 错误信息
      */
     void setError(const String& error);
+
+    /**
+     * @brief 加载和保存各个配置模块的辅助函数
+     */
+    void loadUartConfig();
+    void saveUartConfig();
+    void loadSmsConfig();
+    void saveSmsConfig();
+    void loadGsmConfig();
+    void saveGsmConfig();
+    void loadSystemConfig();
+    void saveSystemConfig();
 };
 
 #endif // CONFIG_MANAGER_H

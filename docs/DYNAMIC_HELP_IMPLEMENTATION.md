@@ -222,7 +222,7 @@ String exampleContent = terminalManager.generateChannelExamples();
 - 测试不同渠道组合的情况
 
 ### 3. 测试文件
-- `test/test_dynamic_help.cpp`: 动态帮助功能测试
+- 动态帮助功能已集成到终端管理器中，可通过命令行直接测试
 
 ## 未来扩展
 

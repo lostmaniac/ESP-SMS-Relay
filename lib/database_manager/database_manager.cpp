@@ -29,20 +29,31 @@ static int queryCallback(void *data, int argc, char **argv, char **azColName) {
     std::map<String, String> row;
     
     // 添加边界检查
-    if (argc < 0) {
+    if (argc < 0 || argc > 100) { // 防止异常大的列数
         return 1; // 错误：无效的列数
     }
     
+    // 添加更严格的空指针检查
+    if (!argv || !azColName) {
+        return 1; // 错误：参数数组为空
+    }
+    
     for (int i = 0; i < argc; i++) {
-        if (!azColName || !azColName[i]) {
+        // 检查列名指针是否有效
+        if (!azColName[i]) {
             continue; // 跳过无效的列名
         }
+        
+        // 安全地创建列名和列值
         String colName = String(azColName[i]);
-        String colValue = argv[i] ? String(argv[i]) : "";
+        String colValue = (argv[i] && strlen(argv[i]) > 0) ? String(argv[i]) : "";
         row[colName] = colValue;
     }
     
-    results->push_back(row);
+    // 只有在有有效数据时才添加到结果中
+    if (!row.empty()) {
+        results->push_back(row);
+    }
     return 0;
 }
 
@@ -145,32 +156,45 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
     
     // 配置SQLite以优化ESP32-S3的内存使用
     // 设置页面大小为1KB（适合ESP32的内存特性）
-    executeSQL("PRAGMA page_size = 1024");
+    executeSQLPrivate("PRAGMA page_size = 1024");
     
     // 设置缓存大小（页面数量，1000页 = 1MB缓存）
-    executeSQL("PRAGMA cache_size = 1000");
+    executeSQLPrivate("PRAGMA cache_size = 1000");
     
     // 设置临时存储为内存模式
-    executeSQL("PRAGMA temp_store = MEMORY");
+    executeSQLPrivate("PRAGMA temp_store = MEMORY");
     
-    // 设置日志模式为WAL（Write-Ahead Logging）以提高性能
-    executeSQL("PRAGMA journal_mode = WAL");
+    // 设置日志模式为DELETE（默认模式）
+    executeSQLPrivate("PRAGMA journal_mode = DELETE");
     
     // 设置同步模式为NORMAL（平衡性能和安全性）
-    executeSQL("PRAGMA synchronous = NORMAL");
+    executeSQLPrivate("PRAGMA synchronous = NORMAL");
     
     // 设置内存映射大小（限制为256KB以避免PSRAM问题）
-    executeSQL("PRAGMA mmap_size = 262144");
+    executeSQLPrivate("PRAGMA mmap_size = 262144");
     
     // 启用外键约束
-    executeSQL("PRAGMA foreign_keys = ON");
+    executeSQLPrivate("PRAGMA foreign_keys = ON");
     
     // 设置自动清理
-    executeSQL("PRAGMA auto_vacuum = INCREMENTAL");
+    executeSQLPrivate("PRAGMA auto_vacuum = INCREMENTAL");
     
     debugPrint("SQLite配置完成");
     dbInfo.isOpen = true;
     dbInfo.dbPath = fullDbPath;
+    
+    // 检查数据库完整性（在初始化阶段直接检查，不依赖isReady()）
+    debugPrint("检查数据库完整性");
+    if (!checkDatabaseIntegrityDirect()) {
+        debugPrint("数据库完整性检查失败，尝试修复");
+        String backupPath = fullDbPath + ".backup." + String(millis());
+        if (!repairDatabaseDirect(backupPath)) {
+            debugPrint("数据库修复失败");
+            close();
+            status = DB_ERROR;
+            return false;
+        }
+    }
     
     // 无论数据库文件是否存在，都要确保表结构被正确创建
     debugPrint("开始创建/验证表结构");
@@ -181,19 +205,19 @@ bool DatabaseManager::initialize(const String& dbPath, bool createIfNotExists) {
         return false;
     }
     
-    // 只有在数据库文件不存在时才初始化默认数据
+    // 无论数据库文件是否存在，都要检查并确保默认数据存在
+    debugPrint("检查并确保默认数据存在");
+    if (!initializeDefaultData()) {
+        setError("初始化默认数据失败");
+        close();
+        status = DB_ERROR;
+        return false;
+    }
+    
     if (!dbExists) {
-        debugPrint("数据库文件不存在，初始化默认数据");
-        // 初始化默认数据
-        if (!initializeDefaultData()) {
-            setError("初始化默认数据失败");
-            close();
-            status = DB_ERROR;
-            return false;
-        }
         debugPrint("新数据库初始化完成");
     } else {
-        debugPrint("数据库文件已存在，跳过默认数据初始化");
+        debugPrint("现有数据库验证完成");
     }
     
     status = DB_READY;
@@ -305,12 +329,17 @@ APConfig DatabaseManager::getAPConfig() {
     config.channel = 1;
     config.maxConnections = 4;
     
+    debugPrint("[DatabaseManager] getAPConfig() called");
+    
     if (!isReady()) {
+        debugPrint("[DatabaseManager] Database not ready, returning default config");
         return config;
     }
     
+    debugPrint("[DatabaseManager] Executing query: SELECT * FROM ap_config WHERE id = 1");
     std::vector<std::map<String, String>> configResults;
     if (executeQuery("SELECT * FROM ap_config WHERE id = 1", queryCallback, &configResults)) {
+        debugPrint("[DatabaseManager] Query executed successfully, results count: " + String(configResults.size()));
         if (!configResults.empty()) {
             auto& row = configResults[0];
             config.ssid = row["ssid"];
@@ -320,7 +349,19 @@ APConfig DatabaseManager::getAPConfig() {
             config.maxConnections = row["max_connections"].toInt();
             config.createdAt = row["created_at"];
             config.updatedAt = row["updated_at"];
+            
+            debugPrint("[DatabaseManager] Loaded AP config from database:");
+            debugPrint("  SSID: " + config.ssid);
+            debugPrint("  Password: " + String(config.password.length() > 0 ? "[SET]" : "[EMPTY]"));
+            debugPrint("  Channel: " + String(config.channel));
+            debugPrint("  Max Connections: " + String(config.maxConnections));
+            debugPrint("  Enabled: " + String(config.enabled));
+            debugPrint("  Updated At: " + config.updatedAt);
+        } else {
+            debugPrint("[DatabaseManager] No AP config found in database, using defaults");
         }
+    } else {
+        debugPrint("[DatabaseManager] Failed to execute query, using default config");
     }
     
     return config;
@@ -360,12 +401,16 @@ bool DatabaseManager::updateAPConfig(const APConfig& config) {
     sqlite3_finalize(stmt);
     
     if (rc != SQLITE_DONE) {
-        setError("执行SQL语句失败: " + String(sqlite3_errmsg(db)));
+        setError("更新AP配置失败: " + String(sqlite3_errmsg(db)));
         return false;
     }
     
+    debugPrint("AP配置更新成功");
+    
     return true;
 }
+
+
 
 /**
  * @brief 添加转发规则
@@ -407,7 +452,10 @@ int DatabaseManager::addForwardRule(const ForwardRule& rule) {
         return -1;
     }
     
-    return sqlite3_last_insert_rowid(db);
+    int newRuleId = sqlite3_last_insert_rowid(db);
+    debugPrint("转发规则添加成功，ID: " + String(newRuleId));
+    
+    return newRuleId;
 }
 
 /**
@@ -451,6 +499,8 @@ bool DatabaseManager::updateForwardRule(const ForwardRule& rule) {
         return false;
     }
     
+    debugPrint("转发规则更新成功");
+    
     return true;
 }
 
@@ -485,6 +535,8 @@ bool DatabaseManager::deleteForwardRule(int ruleId) {
         return false;
     }
     
+    debugPrint("转发规则删除成功");
+    
     return true;
 }
 
@@ -504,17 +556,42 @@ std::vector<ForwardRule> DatabaseManager::getAllForwardRules() {
     if (executeQuery("SELECT id, rule_name, source_number, keywords, push_type, push_config, enabled, is_default_forward, created_at, updated_at FROM forward_rules ORDER BY id", queryCallback, &localResults)) {
         for (const auto& row : localResults) {
             ForwardRule rule;
-            rule.id = row.at("id").toInt();
-            rule.ruleName = row.at("rule_name");
-            rule.sourceNumber = row.at("source_number");
-            rule.keywords = row.at("keywords");
-            rule.pushType = row.at("push_type");
-            rule.pushConfig = row.at("push_config");
-            rule.enabled = row.at("enabled").toInt() == 1;
-            rule.isDefaultForward = row.at("is_default_forward").toInt() == 1;
-            rule.createdAt = row.at("created_at");
-            rule.updatedAt = row.at("updated_at");
-            rules.push_back(rule);
+            
+            // 使用安全的访问方式，避免at()方法可能的异常
+            auto it_id = row.find("id");
+            rule.id = (it_id != row.end()) ? it_id->second.toInt() : -1;
+            
+            auto it_name = row.find("rule_name");
+            rule.ruleName = (it_name != row.end()) ? it_name->second : "";
+            
+            auto it_source = row.find("source_number");
+            rule.sourceNumber = (it_source != row.end()) ? it_source->second : "";
+            
+            auto it_keywords = row.find("keywords");
+            rule.keywords = (it_keywords != row.end()) ? it_keywords->second : "";
+            
+            auto it_push_type = row.find("push_type");
+            rule.pushType = (it_push_type != row.end()) ? it_push_type->second : "";
+            
+            auto it_push_config = row.find("push_config");
+            rule.pushConfig = (it_push_config != row.end()) ? it_push_config->second : "{}";
+            
+            auto it_enabled = row.find("enabled");
+            rule.enabled = (it_enabled != row.end()) ? (it_enabled->second.toInt() == 1) : false;
+            
+            auto it_default = row.find("is_default_forward");
+            rule.isDefaultForward = (it_default != row.end()) ? (it_default->second.toInt() == 1) : false;
+            
+            auto it_created = row.find("created_at");
+            rule.createdAt = (it_created != row.end()) ? it_created->second : "";
+            
+            auto it_updated = row.find("updated_at");
+            rule.updatedAt = (it_updated != row.end()) ? it_updated->second : "";
+            
+            // 只有当规则ID有效时才添加到结果中
+            if (rule.id > 0) {
+                rules.push_back(rule);
+            }
         }
     }
     
@@ -548,15 +625,31 @@ ForwardRule DatabaseManager::getForwardRuleById(int ruleId) {
     
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         rule.id = sqlite3_column_int(stmt, 0);
-        rule.ruleName = String((char*)sqlite3_column_text(stmt, 1));
-        rule.sourceNumber = String((char*)sqlite3_column_text(stmt, 2));
-        rule.keywords = String((char*)sqlite3_column_text(stmt, 3));
-        rule.pushType = String((char*)sqlite3_column_text(stmt, 4));
-        rule.pushConfig = String((char*)sqlite3_column_text(stmt, 5));
+        
+        // 安全地获取文本列，防止空指针访问
+        const char* text1 = (const char*)sqlite3_column_text(stmt, 1);
+        rule.ruleName = text1 ? String(text1) : "";
+        
+        const char* text2 = (const char*)sqlite3_column_text(stmt, 2);
+        rule.sourceNumber = text2 ? String(text2) : "";
+        
+        const char* text3 = (const char*)sqlite3_column_text(stmt, 3);
+        rule.keywords = text3 ? String(text3) : "";
+        
+        const char* text4 = (const char*)sqlite3_column_text(stmt, 4);
+        rule.pushType = text4 ? String(text4) : "";
+        
+        const char* text5 = (const char*)sqlite3_column_text(stmt, 5);
+        rule.pushConfig = text5 ? String(text5) : "{}";
+        
         rule.enabled = sqlite3_column_int(stmt, 6) == 1;
         rule.isDefaultForward = sqlite3_column_int(stmt, 7) == 1;
-        rule.createdAt = String((char*)sqlite3_column_text(stmt, 8));
-        rule.updatedAt = String((char*)sqlite3_column_text(stmt, 9));
+        
+        const char* text8 = (const char*)sqlite3_column_text(stmt, 8);
+        rule.createdAt = text8 ? String(text8) : "";
+        
+        const char* text9 = (const char*)sqlite3_column_text(stmt, 9);
+        rule.updatedAt = text9 ? String(text9) : "";
     }
     
     sqlite3_finalize(stmt);
@@ -733,13 +826,26 @@ std::vector<SMSRecord> DatabaseManager::getSMSRecords(int limit, int offset) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         SMSRecord record;
         record.id = sqlite3_column_int(stmt, 0);
-        record.fromNumber = String((char*)sqlite3_column_text(stmt, 1));
-        record.toNumber = String((char*)sqlite3_column_text(stmt, 2));
-        record.content = String((char*)sqlite3_column_text(stmt, 3));
+        
+        // 安全地获取文本列，防止空指针访问
+        const char* fromNum = (const char*)sqlite3_column_text(stmt, 1);
+        record.fromNumber = fromNum ? String(fromNum) : "";
+        
+        const char* toNum = (const char*)sqlite3_column_text(stmt, 2);
+        record.toNumber = toNum ? String(toNum) : "";
+        
+        const char* content = (const char*)sqlite3_column_text(stmt, 3);
+        record.content = content ? String(content) : "";
+        
         record.ruleId = sqlite3_column_int(stmt, 4);
         record.forwarded = sqlite3_column_int(stmt, 5) == 1;
-        record.status = String((char*)sqlite3_column_text(stmt, 6));
-        record.forwardedAt = String((char*)sqlite3_column_text(stmt, 7));
+        
+        const char* status = (const char*)sqlite3_column_text(stmt, 6);
+        record.status = status ? String(status) : "";
+        
+        const char* forwardedAt = (const char*)sqlite3_column_text(stmt, 7);
+        record.forwardedAt = forwardedAt ? String(forwardedAt) : "";
+        
         record.receivedAt = sqlite3_column_int64(stmt, 8);
         records.push_back(record);
     }
@@ -775,13 +881,26 @@ SMSRecord DatabaseManager::getSMSRecordById(int recordId) {
     
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         record.id = sqlite3_column_int(stmt, 0);
-        record.fromNumber = String((char*)sqlite3_column_text(stmt, 1));
-        record.toNumber = String((char*)sqlite3_column_text(stmt, 2));
-        record.content = String((char*)sqlite3_column_text(stmt, 3));
+        
+        // 安全地获取文本列，防止空指针访问
+        const char* fromNum = (const char*)sqlite3_column_text(stmt, 1);
+        record.fromNumber = fromNum ? String(fromNum) : "";
+        
+        const char* toNum = (const char*)sqlite3_column_text(stmt, 2);
+        record.toNumber = toNum ? String(toNum) : "";
+        
+        const char* content = (const char*)sqlite3_column_text(stmt, 3);
+        record.content = content ? String(content) : "";
+        
         record.ruleId = sqlite3_column_int(stmt, 4);
         record.forwarded = sqlite3_column_int(stmt, 5) == 1;
-        record.status = String((char*)sqlite3_column_text(stmt, 6));
-        record.forwardedAt = String((char*)sqlite3_column_text(stmt, 7));
+        
+        const char* status = (const char*)sqlite3_column_text(stmt, 6);
+        record.status = status ? String(status) : "";
+        
+        const char* forwardedAt = (const char*)sqlite3_column_text(stmt, 7);
+        record.forwardedAt = forwardedAt ? String(forwardedAt) : "";
+        
         record.receivedAt = sqlite3_column_int64(stmt, 8);
     }
     
@@ -928,6 +1047,283 @@ void DatabaseManager::setDebugMode(bool enable) {
 }
 
 /**
+ * @brief 检查数据库完整性
+ * @return true 数据库完整
+ * @return false 数据库损坏
+ */
+bool DatabaseManager::checkDatabaseIntegrity() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("开始检查数据库完整性");
+    
+    // 执行完整性检查
+    const char* sql = "PRAGMA integrity_check";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备完整性检查SQL失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    bool isIntact = true;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        // 安全地获取文本列，防止空指针访问
+        const char* resultText = (const char*)sqlite3_column_text(stmt, 0);
+        String result = resultText ? String(resultText) : "error";
+        debugPrint("完整性检查结果: " + result);
+        
+        if (result != "ok") {
+            isIntact = false;
+            setError("数据库完整性检查失败: " + result);
+            break;
+        }
+    }
+    
+    sqlite3_finalize(stmt);
+    
+    if (isIntact) {
+        debugPrint("数据库完整性检查通过");
+    } else {
+        debugPrint("数据库完整性检查失败");
+    }
+    
+    return isIntact;
+}
+
+/**
+ * @brief 修复损坏的数据库
+ * @param backupPath 备份文件路径（可选）
+ * @return true 修复成功
+ * @return false 修复失败
+ */
+bool DatabaseManager::repairDatabase(const String& backupPath) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("开始修复数据库");
+    
+    // 如果提供了备份路径，先创建备份
+    if (backupPath.length() > 0) {
+        debugPrint("创建数据库备份: " + backupPath);
+        if (!createBackup(backupPath)) {
+            debugPrint("创建备份失败，继续修复过程");
+        }
+    }
+    
+    // 尝试使用VACUUM命令修复数据库
+    debugPrint("执行VACUUM命令修复数据库");
+    if (!executeSQLPrivate("VACUUM")) {
+        debugPrint("VACUUM修复失败，尝试重建数据库");
+        
+        // 如果VACUUM失败，尝试重建数据库
+        return rebuildDatabase();
+    }
+    
+    // 再次检查完整性
+    if (checkDatabaseIntegrity()) {
+        debugPrint("数据库修复成功");
+        return true;
+    } else {
+        debugPrint("VACUUM修复后完整性检查仍失败，尝试重建数据库");
+        return rebuildDatabase();
+    }
+}
+
+/**
+ * @brief 创建数据库备份
+ * @param backupPath 备份文件路径
+ * @return true 备份成功
+ * @return false 备份失败
+ */
+bool DatabaseManager::createBackup(const String& backupPath) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("创建数据库备份到: " + backupPath);
+    
+    // 使用SQLite的备份API
+    sqlite3* backupDb;
+    int rc = sqlite3_open(backupPath.c_str(), &backupDb);
+    if (rc != SQLITE_OK) {
+        setError("无法创建备份文件: " + String(sqlite3_errmsg(backupDb)));
+        sqlite3_close(backupDb);
+        return false;
+    }
+    
+    sqlite3_backup* backup = sqlite3_backup_init(backupDb, "main", db, "main");
+    if (backup == nullptr) {
+        setError("初始化备份失败: " + String(sqlite3_errmsg(backupDb)));
+        sqlite3_close(backupDb);
+        return false;
+    }
+    
+    rc = sqlite3_backup_step(backup, -1);
+    sqlite3_backup_finish(backup);
+    sqlite3_close(backupDb);
+    
+    if (rc == SQLITE_DONE) {
+        debugPrint("数据库备份创建成功");
+        return true;
+    } else {
+        setError("备份过程失败: " + String(sqlite3_errstr(rc)));
+        return false;
+    }
+}
+
+/**
+ * @brief 重建损坏的数据库
+ * @return true 重建成功
+ * @return false 重建失败
+ */
+bool DatabaseManager::rebuildDatabase() {
+    debugPrint("开始重建数据库");
+    
+    // 关闭当前数据库连接
+    if (db) {
+        sqlite3_close(db);
+        db = nullptr;
+    }
+    
+    // 删除损坏的数据库文件
+    if (LittleFS.exists(dbPath)) {
+        debugPrint("删除损坏的数据库文件");
+        LittleFS.remove(dbPath);
+    }
+    
+    // 重新初始化数据库
+    debugPrint("重新初始化数据库");
+    if (!initialize()) {
+        setError("重建数据库失败");
+        return false;
+    }
+    
+    debugPrint("数据库重建成功");
+    return true;
+}
+
+/**
+ * @brief 开始事务
+ * @return true 开始成功
+ * @return false 开始失败
+ */
+bool DatabaseManager::beginTransaction() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("开始事务");
+    return executeSQLPrivate("BEGIN TRANSACTION");
+}
+
+/**
+ * @brief 提交事务
+ * @return true 提交成功
+ * @return false 提交失败
+ */
+bool DatabaseManager::commitTransaction() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("提交事务");
+    return executeSQLPrivate("COMMIT");
+}
+
+/**
+ * @brief 回滚事务
+ * @return true 回滚成功
+ * @return false 回滚失败
+ */
+bool DatabaseManager::rollbackTransaction() {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("回滚事务");
+    return executeSQLPrivate("ROLLBACK");
+}
+
+/**
+ * @brief 在事务中删除转发规则（带回滚保护）
+ * @param ruleId 规则ID
+ * @return true 删除成功
+ * @return false 删除失败
+ */
+bool DatabaseManager::deleteForwardRuleWithTransaction(int ruleId) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    debugPrint("在事务中删除转发规则 ID: " + String(ruleId));
+    
+    // 开始事务
+    if (!beginTransaction()) {
+        setError("开始事务失败");
+        return false;
+    }
+    
+    // 先检查规则是否存在
+    ForwardRule rule = getForwardRuleById(ruleId);
+    if (rule.id == -1) {
+        rollbackTransaction();
+        setError("转发规则不存在 ID: " + String(ruleId));
+        return false;
+    }
+    
+    // 执行删除操作
+    const char* sql = "DELETE FROM forward_rules WHERE id=?";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        rollbackTransaction();
+        setError("准备删除SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    sqlite3_bind_int(stmt, 1, ruleId);
+    
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    
+    if (rc != SQLITE_DONE) {
+        rollbackTransaction();
+        setError("执行删除SQL语句失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    // 检查是否真的删除了记录
+    int affectedRows = sqlite3_changes(db);
+    if (affectedRows == 0) {
+        rollbackTransaction();
+        setError("删除操作未影响任何记录");
+        return false;
+    }
+    
+    // 提交事务
+    if (!commitTransaction()) {
+        rollbackTransaction();
+        setError("提交事务失败");
+        return false;
+    }
+    
+    debugPrint("转发规则删除成功，影响行数: " + String(affectedRows));
+    return true;
+}
+
+/**
  * @brief 创建数据库表
  * @return true 创建成功
  * @return false 创建失败
@@ -948,10 +1344,12 @@ bool DatabaseManager::createTables() {
         "updated_at TEXT NOT NULL"
         ")";
     
-    if (!executeSQL(createAPConfigTable)) {
+    if (!executeSQLPrivate(createAPConfigTable)) {
         setError("创建AP配置表失败");
         return false;
     }
+
+
     
     // 创建转发规则表
     String createForwardRulesTable = 
@@ -968,7 +1366,7 @@ bool DatabaseManager::createTables() {
         "updated_at TEXT DEFAULT CURRENT_TIMESTAMP"
         ")";
     
-    if (!executeSQL(createForwardRulesTable)) {
+    if (!executeSQLPrivate(createForwardRulesTable)) {
         setError("创建转发规则表失败");
         return false;
     }
@@ -987,16 +1385,16 @@ bool DatabaseManager::createTables() {
         "received_at INTEGER NOT NULL"
         ")";
     
-    if (!executeSQL(createSMSRecordsTable)) {
+    if (!executeSQLPrivate(createSMSRecordsTable)) {
         setError("创建短信记录表失败");
         return false;
     }
     
     // 创建索引
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_forward_rules_enabled ON forward_rules(enabled)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_from_number ON sms_records(from_number)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_content ON sms_records(content)");
-    executeSQL("CREATE INDEX IF NOT EXISTS idx_sms_records_received_at ON sms_records(received_at)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_forward_rules_enabled ON forward_rules(enabled)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_from_number ON sms_records(from_number)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_content ON sms_records(content)");
+    executeSQLPrivate("CREATE INDEX IF NOT EXISTS idx_sms_records_received_at ON sms_records(received_at)");
     
     debugPrint("数据库表创建完成");
     return true;
@@ -1008,9 +1406,9 @@ bool DatabaseManager::createTables() {
  * @return false 初始化失败
  */
 bool DatabaseManager::initializeDefaultData() {
-    debugPrint("开始初始化默认数据");
+    debugPrint("开始检查并初始化默认数据");
     
-    // 检查AP配置是否已存在
+    // 检查AP配置表是否存在记录
     const char* countSql = "SELECT COUNT(*) FROM ap_config";
     sqlite3_stmt* countStmt;
     
@@ -1026,9 +1424,12 @@ bool DatabaseManager::initializeDefaultData() {
     }
     sqlite3_finalize(countStmt);
     
+    debugPrint("AP配置表当前记录数: " + String(count));
+    
     if (count == 0) {
-        // 插入默认AP配置
-        const char* insertSql = "INSERT INTO ap_config (ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        debugPrint("AP配置表为空，插入默认配置");
+        // 插入默认AP配置，确保id=1
+        const char* insertSql = "INSERT INTO ap_config (id, ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt;
         
         rc = sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nullptr);
@@ -1054,20 +1455,71 @@ bool DatabaseManager::initializeDefaultData() {
             setError("插入默认AP配置失败: " + String(sqlite3_errmsg(db)));
             return false;
         }
-        debugPrint("默认AP配置已创建");
+        debugPrint("默认AP配置已创建 (id=1)");
+    } else {
+        // 检查是否存在id=1的记录
+        const char* checkIdSql = "SELECT COUNT(*) FROM ap_config WHERE id = 1";
+        sqlite3_stmt* checkIdStmt;
+        
+        rc = sqlite3_prepare_v2(db, checkIdSql, -1, &checkIdStmt, nullptr);
+        if (rc != SQLITE_OK) {
+            setError("准备检查ID语句失败: " + String(sqlite3_errmsg(db)));
+            return false;
+        }
+        
+        int idCount = 0;
+        if (sqlite3_step(checkIdStmt) == SQLITE_ROW) {
+            idCount = sqlite3_column_int(checkIdStmt, 0);
+        }
+        sqlite3_finalize(checkIdStmt);
+        
+        debugPrint("AP配置表中id=1的记录数: " + String(idCount));
+        
+        if (idCount == 0) {
+            debugPrint("AP配置表存在记录但缺少id=1的记录，插入默认配置");
+            // 插入id=1的默认配置
+            const char* insertIdSql = "INSERT INTO ap_config (id, ssid, password, enabled, channel, max_connections, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)";
+            sqlite3_stmt* insertIdStmt;
+            
+            rc = sqlite3_prepare_v2(db, insertIdSql, -1, &insertIdStmt, nullptr);
+            if (rc != SQLITE_OK) {
+                setError("准备插入ID配置语句失败: " + String(sqlite3_errmsg(db)));
+                return false;
+            }
+            
+            String timestamp = getCurrentTimestamp();
+            sqlite3_bind_text(insertIdStmt, 1, DEFAULT_AP_SSID, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertIdStmt, 2, DEFAULT_AP_PASSWORD, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(insertIdStmt, 3, 1);
+            sqlite3_bind_int(insertIdStmt, 4, DEFAULT_AP_CHANNEL);
+            sqlite3_bind_int(insertIdStmt, 5, DEFAULT_AP_MAX_CONNECTIONS);
+            sqlite3_bind_text(insertIdStmt, 6, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertIdStmt, 7, timestamp.c_str(), -1, SQLITE_TRANSIENT);
+            
+            rc = sqlite3_step(insertIdStmt);
+            sqlite3_finalize(insertIdStmt);
+            
+            if (rc != SQLITE_DONE) {
+                setError("插入默认AP配置(id=1)失败: " + String(sqlite3_errmsg(db)));
+                return false;
+            }
+            debugPrint("默认AP配置已补充创建 (id=1)");
+        } else {
+            debugPrint("AP配置表中已存在id=1的记录，无需创建默认配置");
+        }
     }
     
-    debugPrint("默认数据初始化完成");
+    debugPrint("默认数据检查和初始化完成");
     return true;
 }
 
 /**
- * @brief 执行SQL语句
+ * @brief 执行SQL语句（私有方法）
  * @param sql SQL语句
  * @return true 执行成功
  * @return false 执行失败
  */
-bool DatabaseManager::executeSQL(const String& sql) {
+bool DatabaseManager::executeSQLPrivate(const String& sql) {
     std::lock_guard<std::mutex> lock(dbMutex);
     
     if (!db) {
@@ -1090,6 +1542,80 @@ bool DatabaseManager::executeSQL(const String& sql) {
     }
     
     return true;
+}
+
+/**
+ * @brief 执行SQL语句（公共接口）
+ * @param sql SQL语句
+ * @return true 执行成功
+ * @return false 执行失败
+ */
+bool DatabaseManager::executeSQL(const String& sql) {
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return false;
+    }
+    
+    return executeSQLPrivate(sql);
+}
+
+/**
+ * @brief 执行查询SQL并返回结果
+ * @param sql SQL查询语句
+ * @return std::vector<std::map<String, String>> 查询结果
+ */
+std::vector<std::map<String, String>> DatabaseManager::executeQuery(const String& sql) {
+    std::vector<std::map<String, String>> results;
+    
+    if (!isReady()) {
+        setError("数据库未就绪");
+        return results;
+    }
+    
+    std::lock_guard<std::mutex> lock(dbMutex);
+    
+    if (!db) {
+        setError("数据库连接无效");
+        return results;
+    }
+    
+    debugPrint("执行查询: " + sql);
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+    
+    if (rc != SQLITE_OK) {
+        setError("SQL准备失败: " + String(sqlite3_errmsg(db)));
+        return results;
+    }
+    
+    // 获取列数
+    int columnCount = sqlite3_column_count(stmt);
+    
+    // 执行查询并收集结果
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        std::map<String, String> row;
+        
+        for (int i = 0; i < columnCount; i++) {
+            String columnName = String(sqlite3_column_name(stmt, i));
+            
+            // 安全地获取列值，检查空指针
+            const char* columnText = (const char*)sqlite3_column_text(stmt, i);
+            String columnValue = columnText ? String(columnText) : "";
+            
+            row[columnName] = columnValue;
+        }
+        
+        results.push_back(row);
+    }
+    
+    if (rc != SQLITE_DONE) {
+        setError("查询执行失败: " + String(sqlite3_errmsg(db)));
+        results.clear();
+    }
+    
+    sqlite3_finalize(stmt);
+    return results;
 }
 
 /**
@@ -1153,4 +1679,108 @@ String DatabaseManager::getCurrentTimestamp() {
     // 在实际应用中，可以使用RTC或NTP时间
     unsigned long currentTime = millis();
     return String(currentTime);
+}
+
+/**
+ * @brief 直接检查数据库完整性（不依赖isReady状态）
+ * @return true 数据库完整
+ * @return false 数据库损坏
+ */
+bool DatabaseManager::checkDatabaseIntegrityDirect() {
+    if (db == nullptr) {
+        setError("数据库连接为空");
+        return false;
+    }
+    
+    debugPrint("开始检查数据库完整性");
+    
+    // 执行完整性检查
+    const char* sql = "PRAGMA integrity_check";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        setError("准备完整性检查SQL失败: " + String(sqlite3_errmsg(db)));
+        return false;
+    }
+    
+    bool isIntact = true;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        // 安全地获取文本列，防止空指针访问
+        const char* resultText = (const char*)sqlite3_column_text(stmt, 0);
+        String result = resultText ? String(resultText) : "error";
+        debugPrint("完整性检查结果: " + result);
+        
+        if (result != "ok") {
+            isIntact = false;
+            setError("数据库完整性检查失败: " + result);
+            break;
+        }
+    }
+    
+    sqlite3_finalize(stmt);
+    
+    if (isIntact) {
+        debugPrint("数据库完整性检查通过");
+    } else {
+        debugPrint("数据库完整性检查失败");
+    }
+    
+    return isIntact;
+}
+
+/**
+ * @brief 直接修复损坏的数据库（不依赖isReady状态）
+ * @param backupPath 备份文件路径（可选）
+ * @return true 修复成功
+ * @return false 修复失败
+ */
+bool DatabaseManager::repairDatabaseDirect(const String& backupPath) {
+    if (db == nullptr) {
+        setError("数据库连接为空");
+        return false;
+    }
+    
+    debugPrint("开始修复数据库");
+    
+    // 如果提供了备份路径，先创建备份
+    if (backupPath.length() > 0) {
+        debugPrint("创建数据库备份: " + backupPath);
+        // 直接创建备份，不依赖isReady()
+        sqlite3* backupDb;
+        int rc = sqlite3_open(backupPath.c_str(), &backupDb);
+        if (rc == SQLITE_OK) {
+            sqlite3_backup* backup = sqlite3_backup_init(backupDb, "main", db, "main");
+            if (backup != nullptr) {
+                rc = sqlite3_backup_step(backup, -1);
+                sqlite3_backup_finish(backup);
+                if (rc == SQLITE_DONE) {
+                    debugPrint("数据库备份创建成功");
+                } else {
+                    debugPrint("创建备份失败，继续修复过程");
+                }
+            }
+            sqlite3_close(backupDb);
+        } else {
+            debugPrint("创建备份失败，继续修复过程");
+        }
+    }
+    
+    // 尝试使用VACUUM命令修复数据库
+    debugPrint("执行VACUUM命令修复数据库");
+    if (!executeSQLPrivate("VACUUM")) {
+        debugPrint("VACUUM修复失败，尝试重建数据库");
+        
+        // 如果VACUUM失败，尝试重建数据库
+        return rebuildDatabase();
+    }
+    
+    // 再次检查完整性
+    if (checkDatabaseIntegrityDirect()) {
+        debugPrint("数据库修复成功");
+        return true;
+    } else {
+        debugPrint("VACUUM修复后完整性检查仍失败，尝试重建数据库");
+        return rebuildDatabase();
+    }
 }

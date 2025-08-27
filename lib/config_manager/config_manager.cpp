@@ -7,6 +7,7 @@
 
 #include "config_manager.h"
 #include "../../include/constants.h"
+#include "../../include/config.h"
 #include <Arduino.h>
 
 /**
@@ -81,33 +82,10 @@ bool ConfigManager::loadConfig() {
     }
     
     try {
-        // 加载串口配置
-        uartConfig.baudRate = preferences.getInt("uart_baud", DEFAULT_UART_BAUD_RATE);
-        uartConfig.rxPin = preferences.getInt("uart_rx", 16);
-        uartConfig.txPin = preferences.getInt("uart_tx", 17);
-        uartConfig.serialNumber = preferences.getInt("uart_num", 2);
-        uartConfig.timeout = preferences.getULong("uart_timeout", DEFAULT_AT_COMMAND_TIMEOUT_MS);
-        
-        // 加载短信配置
-        smsConfig.smsCenterNumber = preferences.getString("sms_center", "+8613010200500");
-        smsConfig.testPhoneNumber = preferences.getString("test_phone", "10086");
-        smsConfig.maxRetries = preferences.getInt("sms_retries", 3);
-        smsConfig.sendTimeout = preferences.getULong("sms_timeout", DEFAULT_SMS_SEND_TIMEOUT_MS);
-        smsConfig.enableNotification = preferences.getBool("sms_notify", true);
-        
-        // 加载GSM配置
-        gsmConfig.initTimeout = preferences.getULong("gsm_init_timeout", DEFAULT_GSM_INIT_TIMEOUT_MS);
-        gsmConfig.commandTimeout = preferences.getULong("gsm_cmd_timeout", DEFAULT_AT_COMMAND_TIMEOUT_MS);
-        gsmConfig.maxInitRetries = preferences.getInt("gsm_retries", 3);
-        gsmConfig.signalThreshold = preferences.getInt("gsm_signal", 10);
-        gsmConfig.autoReconnect = preferences.getBool("gsm_reconnect", true);
-        
-        // 加载系统配置
-        systemConfig.enableDebug = preferences.getBool("sys_debug", true);
-        systemConfig.runTestsOnStartup = preferences.getBool("sys_test", true);
-        systemConfig.watchdogTimeout = preferences.getULong("sys_watchdog", DEFAULT_WATCHDOG_TIMEOUT_MS);
-        systemConfig.logLevel = preferences.getInt("sys_log_level", 3);
-        systemConfig.deviceName = preferences.getString("sys_name", "ESP-SMS-Relay");
+        loadUartConfig();
+        loadSmsConfig();
+        loadGsmConfig();
+        loadSystemConfig();
         
         Serial.println("配置加载完成");
         return true;
@@ -129,33 +107,10 @@ bool ConfigManager::saveConfig() {
     }
     
     try {
-        // 保存串口配置
-        preferences.putInt("uart_baud", uartConfig.baudRate);
-        preferences.putInt("uart_rx", uartConfig.rxPin);
-        preferences.putInt("uart_tx", uartConfig.txPin);
-        preferences.putInt("uart_num", uartConfig.serialNumber);
-        preferences.putULong("uart_timeout", uartConfig.timeout);
-        
-        // 保存短信配置
-        preferences.putString("sms_center", smsConfig.smsCenterNumber);
-        preferences.putString("test_phone", smsConfig.testPhoneNumber);
-        preferences.putInt("sms_retries", smsConfig.maxRetries);
-        preferences.putULong("sms_timeout", smsConfig.sendTimeout);
-        preferences.putBool("sms_notify", smsConfig.enableNotification);
-        
-        // 保存GSM配置
-        preferences.putULong("gsm_init_timeout", gsmConfig.initTimeout);
-        preferences.putULong("gsm_cmd_timeout", gsmConfig.commandTimeout);
-        preferences.putInt("gsm_retries", gsmConfig.maxInitRetries);
-        preferences.putInt("gsm_signal", gsmConfig.signalThreshold);
-        preferences.putBool("gsm_reconnect", gsmConfig.autoReconnect);
-        
-        // 保存系统配置
-        preferences.putBool("sys_debug", systemConfig.enableDebug);
-        preferences.putBool("sys_test", systemConfig.runTestsOnStartup);
-        preferences.putULong("sys_watchdog", systemConfig.watchdogTimeout);
-        preferences.putInt("sys_log_level", systemConfig.logLevel);
-        preferences.putString("sys_name", systemConfig.deviceName);
+        saveUartConfig();
+        saveSmsConfig();
+        saveGsmConfig();
+        saveSystemConfig();
         
         Serial.println("配置保存完成");
         return true;
@@ -230,7 +185,7 @@ bool ConfigManager::validateConfig() {
  */
 void ConfigManager::setDefaultConfig() {
     // 串口默认配置
-    uartConfig.baudRate = SIM_SERIAL_BAUD_RATE;
+    uartConfig.baudRate = SIM_BAUD_RATE;
     uartConfig.rxPin = 16;
     uartConfig.txPin = 17;
     uartConfig.serialNumber = 2;
@@ -322,4 +277,68 @@ void ConfigManager::printConfig() {
     Serial.printf("  设备名称: %s\n", systemConfig.deviceName.c_str());
     
     Serial.println("=== 配置信息结束 ===\n");
+}
+
+void ConfigManager::loadUartConfig() {
+    uartConfig.baudRate = preferences.getInt("uart_baud", DEFAULT_UART_BAUD_RATE);
+    uartConfig.rxPin = preferences.getInt("uart_rx", 16);
+    uartConfig.txPin = preferences.getInt("uart_tx", 17);
+    uartConfig.serialNumber = preferences.getInt("uart_num", 2);
+    uartConfig.timeout = preferences.getULong("uart_timeout", DEFAULT_AT_COMMAND_TIMEOUT_MS);
+}
+
+void ConfigManager::saveUartConfig() {
+    preferences.putInt("uart_baud", uartConfig.baudRate);
+    preferences.putInt("uart_rx", uartConfig.rxPin);
+    preferences.putInt("uart_tx", uartConfig.txPin);
+    preferences.putInt("uart_num", uartConfig.serialNumber);
+    preferences.putULong("uart_timeout", uartConfig.timeout);
+}
+
+void ConfigManager::loadSmsConfig() {
+    smsConfig.smsCenterNumber = preferences.getString("sms_center", "+8613010200500");
+    smsConfig.testPhoneNumber = preferences.getString("test_phone", "10086");
+    smsConfig.maxRetries = preferences.getInt("sms_retries", 3);
+    smsConfig.sendTimeout = preferences.getULong("sms_timeout", DEFAULT_SMS_SEND_TIMEOUT_MS);
+    smsConfig.enableNotification = preferences.getBool("sms_notify", true);
+}
+
+void ConfigManager::saveSmsConfig() {
+    preferences.putString("sms_center", smsConfig.smsCenterNumber);
+    preferences.putString("test_phone", smsConfig.testPhoneNumber);
+    preferences.putInt("sms_retries", smsConfig.maxRetries);
+    preferences.putULong("sms_timeout", smsConfig.sendTimeout);
+    preferences.putBool("sms_notify", smsConfig.enableNotification);
+}
+
+void ConfigManager::loadGsmConfig() {
+    gsmConfig.initTimeout = preferences.getULong("gsm_init_timeout", DEFAULT_GSM_INIT_TIMEOUT_MS);
+    gsmConfig.commandTimeout = preferences.getULong("gsm_cmd_timeout", DEFAULT_AT_COMMAND_TIMEOUT_MS);
+    gsmConfig.maxInitRetries = preferences.getInt("gsm_retries", 3);
+    gsmConfig.signalThreshold = preferences.getInt("gsm_signal", 10);
+    gsmConfig.autoReconnect = preferences.getBool("gsm_reconnect", true);
+}
+
+void ConfigManager::saveGsmConfig() {
+    preferences.putULong("gsm_init_timeout", gsmConfig.initTimeout);
+    preferences.putULong("gsm_cmd_timeout", gsmConfig.commandTimeout);
+    preferences.putInt("gsm_retries", gsmConfig.maxInitRetries);
+    preferences.putInt("gsm_signal", gsmConfig.signalThreshold);
+    preferences.putBool("gsm_reconnect", gsmConfig.autoReconnect);
+}
+
+void ConfigManager::loadSystemConfig() {
+    systemConfig.enableDebug = preferences.getBool("sys_debug", true);
+    systemConfig.runTestsOnStartup = preferences.getBool("sys_test", true);
+    systemConfig.watchdogTimeout = preferences.getULong("sys_watchdog", DEFAULT_WATCHDOG_TIMEOUT_MS);
+    systemConfig.logLevel = preferences.getInt("sys_log_level", 3);
+    systemConfig.deviceName = preferences.getString("sys_name", "ESP-SMS-Relay");
+}
+
+void ConfigManager::saveSystemConfig() {
+    preferences.putBool("sys_debug", systemConfig.enableDebug);
+    preferences.putBool("sys_test", systemConfig.runTestsOnStartup);
+    preferences.putULong("sys_watchdog", systemConfig.watchdogTimeout);
+    preferences.putInt("sys_log_level", systemConfig.logLevel);
+    preferences.putString("sys_name", systemConfig.deviceName);
 }
