@@ -172,8 +172,8 @@ jobs:
         draft: false
         prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
         files: |
-          ./artifacts/esp-sms-relay-*.bin
-          ./artifacts/esp-sms-relay-*.elf
+          ./artifacts/.pio/build/esp32-s3-devkitm-1/esp-sms-relay-*.bin
+          ./artifacts/.pio/build/esp32-s3-devkitm-1/esp-sms-relay-*.elf
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
