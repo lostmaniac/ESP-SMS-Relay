@@ -20,6 +20,8 @@ jobs:
   lint:
     name: Code Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # 只需要读取代码
     
     steps:
     - name: Checkout code
@@ -48,6 +50,8 @@ jobs:
     name: Build Check
     runs-on: ubuntu-latest
     needs: lint
+    permissions:
+      contents: read  # 只需要读取代码
     
     steps:
     - name: Checkout code
