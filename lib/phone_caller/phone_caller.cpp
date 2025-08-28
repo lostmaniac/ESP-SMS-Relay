@@ -15,6 +15,7 @@
 #include "phone_caller.h"
 #include "../../include/constants.h"
 #include <HardwareSerial.h>
+#include <esp_task_wdt.h>
 
 // 外部串口对象声明
 extern HardwareSerial simSerial;
@@ -70,6 +71,9 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
     bool call_initiated = false;
     
     while (millis() - start_time < 15000) { // 15秒超时
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -90,7 +94,7 @@ PhoneCallResult PhoneCaller::makeCall(const String& phone_number) {
                 return CALL_ERROR_AT_COMMAND_FAILED;
             }
         }
-        delay(10);
+        vTaskDelay(1);
     }
     
     if (call_initiated) {
@@ -116,7 +120,11 @@ PhoneCallResult PhoneCaller::makeCallAndWait(const String& phone_number, int wai
     
     // 等待指定时间
     for (int i = wait_seconds; i > 0; i--) {
-        delay(1000);
+        // 在等待期间重置看门狗
+        for (int j = 0; j < 100; j++) {
+            esp_task_wdt_reset();
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
     }
     
     // 挂断电话
@@ -147,6 +155,9 @@ bool PhoneCaller::hangupCall() {
     String response = "";
     
     while (millis() - start_time < DEFAULT_PHONE_CALL_TIMEOUT_MS) { // 电话呼叫超时
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -159,7 +170,7 @@ bool PhoneCaller::hangupCall() {
                 break;
             }
         }
-        delay(10);
+        vTaskDelay(1);
     }
     
     // 检查响应
@@ -196,6 +207,9 @@ bool PhoneCaller::checkCallStatus() {
     String response = "";
     
     while (millis() - start_time < DEFAULT_AT_COMMAND_TIMEOUT_MS) {
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -209,7 +223,7 @@ bool PhoneCaller::checkCallStatus() {
                 }
             }
         }
-        delay(10);
+        vTaskDelay(1);
     }
     return true;
 }
@@ -316,6 +330,9 @@ bool PhoneCaller::sendAtCommand(const String& command, const String& expected_re
     
     // 等待响应
     while (millis() - start_time < timeout) {
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -330,7 +347,7 @@ bool PhoneCaller::sendAtCommand(const String& command, const String& expected_re
                 return false;
             }
         }
-        delay(10);
+        vTaskDelay(1);
     }
     return false;
 }

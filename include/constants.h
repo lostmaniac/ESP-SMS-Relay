@@ -122,8 +122,8 @@
 #define PUSH_TYPE_WEBHOOK "webhook"
 
 /// 推送重试配置
-#define MAX_PUSH_RETRY_COUNT 3
-#define PUSH_RETRY_DELAY_MS 2000
+#define MAX_PUSH_RETRY_COUNT 2
+#define PUSH_RETRY_DELAY_MS 500
 
 /// 推送消息长度限制
 #define PUSH_MESSAGE_MAX_LENGTH 4096

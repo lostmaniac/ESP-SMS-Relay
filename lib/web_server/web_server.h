@@ -36,6 +36,7 @@ private:
     static void handleAPRoot(class AsyncWebServerRequest *request);
     static void handleConnect(class AsyncWebServerRequest *request);
     static void handleGetPushChannels(class AsyncWebServerRequest *request);
+    static void handleGetSystemStatus(class AsyncWebServerRequest *request);
     
     // Database maintenance handlers
     static void handleExecuteSQL(class AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);

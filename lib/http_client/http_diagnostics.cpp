@@ -13,6 +13,7 @@
 #include "at_command_handler.h"
 #include "../../include/constants.h"
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 /**
  * @brief 获取单例实例
@@ -235,8 +236,11 @@ HttpDiagnosticStatus HttpDiagnostics::checkPdpContext() {
         if (httpClient.activatePdpContext()) {
             debugPrint("PDP上下文激活成功");
             
-            // 等待IP地址分配
-            delay(2000);
+            // 等待IP地址分配，期间重置看门狗
+            for (int i = 0; i < 200; i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+            }
             AtResponse ipResponse = atHandler.sendCommand("AT+CGPADDR=1", "OK", 3000);
             if (ipResponse.result == AT_RESULT_SUCCESS) {
                 debugPrint("激活后IP地址: " + ipResponse.response);
@@ -259,7 +263,11 @@ HttpDiagnosticStatus HttpDiagnostics::checkHttpService() {
     
     // 先尝试终止可能存在的HTTP服务
     atHandler.sendCommand("AT+HTTPTERM", "OK", 3000);
-    delay(1000);
+    // 等待HTTP服务终止，期间重置看门狗
+    for (int i = 0; i < 100; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
     
     // 尝试初始化HTTP服务
     AtResponse response = atHandler.sendCommand("AT+HTTPINIT", "OK", 5000);

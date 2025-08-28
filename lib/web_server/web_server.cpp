@@ -9,6 +9,12 @@
 #include "docs_guide.h"
 #include "../wifi_manager_web/wifi_manager_web.h"
 #include "../push_manager/push_channel_registry.h"
+#include "../filesystem_manager/filesystem_manager.h"
+#include "../gsm_service/gsm_service.h"
+#include "../task_scheduler/task_scheduler.h"
+#include <WiFi.h>
+#include <esp_system.h>
+#include <esp_heap_caps.h>
 
 // --- Singleton Instance ---
 WebServer& WebServer::getInstance() {
@@ -45,6 +51,7 @@ void WebServer::setupRoutes() {
     
     // API routes - medium length paths
     server->on("/api/push_channels", HTTP_GET, WebServer::handleGetPushChannels);
+    server->on("/api/system_status", HTTP_GET, WebServer::handleGetSystemStatus);
     server->on("/api/sms_history", HTTP_GET, WebServer::handleGetSmsHistory);
     server->on("/api/rules", HTTP_GET, WebServer::handleGetRules);
     server->on("/api/rules", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, WebServer::handleAddRule);
@@ -218,8 +225,11 @@ void WebServer::handleUpdateAPSettings(AsyncWebServerRequest *request, uint8_t *
         if (updateResult) {
             Serial.println("[WebServer] Settings saved successfully. Rebooting...");
             request->send(200, "text/plain", "Settings saved. Rebooting...");
-            delay(1000);
-            ESP.restart();
+            // 使用任务调度器延迟重启，避免阻塞
+            TaskScheduler& scheduler = TaskScheduler::getInstance();
+            scheduler.addOnceTask("reboot_task", 1000, []() {
+                ESP.restart();
+            });
         } else {
             Serial.println("[WebServer] Failed to save settings to database");
             Serial.println("[WebServer] Last error: " + dbManager.getLastError());
@@ -323,8 +333,11 @@ void WebServer::handleGetLogs(AsyncWebServerRequest *request) {
 
 void WebServer::handleReboot(AsyncWebServerRequest *request) {
     request->send(200, "text/plain", "Rebooting...");
-    delay(1000);
-    ESP.restart();
+    // 使用任务调度器延迟重启，避免阻塞
+    TaskScheduler& scheduler = TaskScheduler::getInstance();
+    scheduler.addOnceTask("reboot_task", 1000, []() {
+        ESP.restart();
+    });
 }
 
 void WebServer::handleNotFound(AsyncWebServerRequest *request) {
@@ -432,4 +445,22 @@ void WebServer::handleExecuteSQL(AsyncWebServerRequest *request, uint8_t *data, 
         serializeJson(responseDoc, response);
         request->send(200, "application/json", response);
     }
+}
+
+void WebServer::handleGetSystemStatus(AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    
+    // Flash存储信息
+    FilesystemManager& fsManager = FilesystemManager::getInstance();
+    FilesystemInfo fsInfo = fsManager.getFilesystemInfo();
+    
+    doc["flash"]["total"] = fsInfo.totalBytes;
+    doc["flash"]["used"] = fsInfo.usedBytes;
+    doc["flash"]["free"] = fsInfo.freeBytes;
+    doc["flash"]["usage_percent"] = fsInfo.usagePercent;
+    doc["flash"]["mounted"] = fsInfo.mounted;
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
 }

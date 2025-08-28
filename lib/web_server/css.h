@@ -37,6 +37,31 @@ form button { margin-top: 1.5rem; }
 .message { margin-top: 1rem; padding: 0.8rem; border-radius: 4px; }
 .message.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
 .message.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+.database-message { margin: 10px 0; padding: 10px; border-radius: 4px; font-weight: bold; }
+.database-message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.database-message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.database-message.info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+.database-results { margin-top: 20px; }
+.database-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.database-table th, .database-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+.database-table th { background-color: #f2f2f2; font-weight: bold; }
+.database-table tr:nth-child(even) { background-color: #f9f9f9; }
+.database-execution-info { margin: 10px 0; padding: 10px; background-color: #e9ecef; border-radius: 4px; font-family: monospace; font-size: 14px; }
+.database-examples { margin-top: 20px; }
+.database-examples h4 { margin-bottom: 10px; color: #333; }
+.database-examples ul { list-style-type: none; padding: 0; }
+.database-examples li { margin: 5px 0; }
+.database-examples a { color: #007bff; text-decoration: none; cursor: pointer; }
+.database-examples a:hover { text-decoration: underline; }
+.status-section { margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff; }
+.status-section h3 { margin-top: 0; margin-bottom: 15px; color: #333; font-size: 18px; }
+.status-section p { margin: 8px 0; line-height: 1.5; }
+.progress-container { margin: 15px 0; }
+.progress-label { margin-bottom: 5px; font-weight: bold; color: #333; }
+.progress-bar { width: 100%; height: 20px; background-color: #e9ecef; border-radius: 10px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2); }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #28a745 0%, #ffc107 70%, #dc3545 90%); transition: width 0.3s ease; border-radius: 10px; }
+.progress-details { margin-top: 5px; font-size: 12px; color: #666; }
+#status-loading { text-align: center; padding: 20px; color: #666; font-style: italic; }
 )rawliteral";
 
 #endif // CSS_CONTENT_H

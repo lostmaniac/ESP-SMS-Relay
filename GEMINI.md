@@ -64,6 +64,111 @@ ESP-SMS-Relay 是一个基于 ESP32-S3 的智能短信中继系统。其核心�
     *   **命令:** `pio test`
     *   **VSCode UI:** 在 PlatformIO 的项目任务列表中，选择 `env:esp32-s3-devkitm-1` -> `Test`。
 
+## 函数调用关系
+
+```
+main.cpp
+├── setup()
+│   ├── initializeSystem()
+│   │   ├── LogManager::getInstance().initialize()
+│   │   ├── FilesystemManager::getInstance().initialize()
+│   │   ├── DatabaseManager::getInstance().initialize()
+│   │   ├── TerminalManager::getInstance().initialize()
+│   │   └── PushManager::getInstance().initialize()
+│   ├── initializeWifiAndWebServer()
+│   │   ├── WiFiManagerWeb::getInstance().startAP()
+│   │   └── WebServer::getInstance().start()
+│   ├── performStartupCall()
+│   │   ├── GsmService::getInstance().initialize()
+│   │   ├── GsmService::getInstance().isModuleOnline()
+│   │   ├── GsmService::getInstance().waitForNetworkRegistration()
+│   │   ├── GsmService::getInstance().getUnixTimestamp()
+│   │   ├── GsmService::getInstance().getImsi()
+│   │   ├── CarrierConfig::getInstance().identifyCarrier()
+│   │   └── PhoneCaller::makeCallAndWait()
+│   └── uart_monitor_task() [FreeRTOS Task]
+└── loop()
+    ├── TerminalManager::getInstance().handleSerialInput()
+    └── TaskScheduler::getInstance().handleTasks()
+
+TerminalManager
+├── handleSerialInput()
+│   └── processCommand()
+│       ├── executeHelpCommand()
+│       │   └── showChannelConfigHelp()
+│       ├── executeListCommand()
+│       │   └── getForwardRules()
+│       ├── executeAddCommand()
+│       │   └── addForwardRule()
+│       ├── executeDeleteCommand()
+│       │   └── deleteForwardRule()
+│       ├── executeEnableCommand()
+│       │   └── enableRule()
+│       ├── executeDisableCommand()
+│       │   └── disableRule()
+│       ├── executeTestCommand()
+│       │   └── testRule()
+│       ├── executeStatusCommand()
+│       ├── executeSyncTimeCommand()
+│       │   └── GsmService::getInstance().getNetworkTime()
+│       ├── executeImportCommand()
+│       ├── executeExportCommand()
+│       │   └── exportRules()
+│       └── executeAtCommand()
+│           └── GsmService::getInstance().sendAtCommandWithResponse()
+
+SmsHandler
+├── processMessageBlock()
+│   ├── pdu.decodePDU()
+│   ├── assembleAndProcessSms()
+│   │   └── processSmsComplete()
+│   │       ├── storeSmsToDatabase()
+│   │       │   └── DatabaseManager::getInstance().addSMSRecord()
+│   │       └── forwardSms()
+│   │           └── PushManager::getInstance().processSmsForward()
+│   └── processSmsComplete()
+
+PushManager
+├── processSmsForward()
+│   ├── matchForwardRules()
+│   │   └── loadRulesToCache()
+│   └── executePush()
+│       └── pushToChannel()
+│           ├── PushChannelRegistry::getInstance().createChannel()
+│           └── channel->push()
+
+HttpClient
+├── request()
+│   ├── validateUrl()
+│   ├── isNetworkConnected()
+│   ├── isPdpContextActive()
+│   ├── activatePdpContext()
+│   ├── initHttpService()
+│   ├── setHttpParameter()
+│   ├── sendHttpData()
+│   ├── executeHttpAction()
+│   └── terminateHttpService()
+
+GsmService
+├── initialize()
+│   ├── sendAtCommand()
+│   └── getSmsCenterNumber()
+├── sendAtCommand()
+├── sendAtCommandWithResponse()
+├── isModuleOnline()
+├── getNetworkStatus()
+├── waitForNetworkRegistration()
+├── getSignalStrength()
+├── isSimCardReady()
+├── getImsi()
+├── getSmsCenterNumber()
+├── setSmsCenterNumber()
+├── configureSmsNotification()
+├── resetModule()
+├── getNetworkTime()
+└── getUnixTimestamp()
+```
+
 ## 开发规范
 
 *   **代码风格:** 代码遵循统一的风格和清晰的命名约定 (例如，类名使用 `PascalCase`，函数和变量名使用 `camelCase`)。

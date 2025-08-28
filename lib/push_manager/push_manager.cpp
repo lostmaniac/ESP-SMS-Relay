@@ -11,6 +11,7 @@
 #include "../http_client/http_diagnostics.h"
 #include "../../include/constants.h"
 #include <ArduinoJson.h>
+#include "esp_task_wdt.h"
 
 // 包含所有推送渠道实现以触发自动注册
 #include "channels/wecom_channel.cpp"
@@ -447,7 +448,12 @@ PushResult PushManager::pushToChannel(const String& channelName, const String& c
             // 如果不是最后一次尝试，等待后重试
             if (attempt < MAX_PUSH_RETRY_COUNT) {
                 debugPrint("等待 " + String(PUSH_RETRY_DELAY_MS) + "ms 后重试...");
-                delay(PUSH_RETRY_DELAY_MS);
+                // 使用非阻塞延时，期间重置看门狗
+                unsigned long startTime = millis();
+                while (millis() - startTime < PUSH_RETRY_DELAY_MS) {
+                    esp_task_wdt_reset(); // 重置看门狗
+                    vTaskDelay(50 / portTICK_PERIOD_MS); // 短暂延时
+                }
                 
                 // 垃圾回收：释放当前渠道实例，重新创建
                 channel.reset(); // 智能指针自动释放内存

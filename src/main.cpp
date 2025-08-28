@@ -12,6 +12,7 @@
 
 #include <Arduino.h>
 #include <sys/time.h>
+#include <esp_task_wdt.h>
 #include "terminal_manager.h"
 #include "database_manager.h"
 #include "log_manager.h"
@@ -255,8 +256,11 @@ void setup() {
     Serial.begin(115200);
     simSerial.begin(SIM_BAUD_RATE, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
     
-    // 等待串口稳定
-    delay(1000);
+    // 等待串口稳定，期间重置看门狗
+    for (int i = 0; i < 100; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
     
     Serial.println("\n" + String('=', 50));
     Serial.println("    ESP32 SMS Relay System");
@@ -268,7 +272,9 @@ void setup() {
     if (!initializeSystem()) {
         Serial.println("\n❌ System initialization failed! Halting.");
         while (true) {
-            delay(1000);
+            // 系统初始化失败，持续重置看门狗防止重启
+            esp_task_wdt_reset();
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
     }
     
@@ -369,6 +375,7 @@ void loop() {
         lastMemoryCheck = currentTime;
     }
     
-    // 短暂延迟，避免过度占用CPU
-    delay(10);
+    // 短暂延迟，避免过度占用CPU，同时重置看门狗
+    esp_task_wdt_reset();
+    vTaskDelay(1);
 }

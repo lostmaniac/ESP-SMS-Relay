@@ -12,6 +12,7 @@
 #include "../../include/constants.h"
 #include <Arduino.h>
 #include <time.h>
+#include <esp_task_wdt.h>
 
 // 外部串口对象
 extern HardwareSerial simSerial;
@@ -66,9 +67,12 @@ bool GsmService::initialize() {
     // 清空串口缓冲区
     clearSerialBuffer();
     
-    // 等待模块准备就绪（增加等待时间）
+    // 等待模块准备就绪（增加等待时间），期间重置看门狗
     Serial.println("等待GSM模块启动...");
-    vTaskDelay(DEFAULT_GSM_INIT_TIMEOUT_MS / portTICK_PERIOD_MS);
+    for (int i = 0; i < (DEFAULT_GSM_INIT_TIMEOUT_MS / 100); i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     
     // 多次尝试检查模块响应
     bool moduleResponding = false;
@@ -83,8 +87,11 @@ bool GsmService::initialize() {
         simSerial.flush();
         Serial.println("发送: AT");
         
-        // 等待模块处理
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        // 等待模块处理，期间重置看门狗
+        for (int i = 0; i < 5; i++) {
+            esp_task_wdt_reset();
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        }
         
         // 等待响应
         String response = waitForResponse(DEFAULT_GSM_INIT_TIMEOUT_MS); // 增加超时时间
@@ -96,10 +103,13 @@ bool GsmService::initialize() {
             break;
         }
         
-        // 如果没有响应，等待后重试
+        // 如果没有响应，等待后重试，期间重置看门狗
         if (attempt < 5) {
             Serial.println("模块无响应，等待3秒后重试...");
-            vTaskDelay(DEFAULT_AT_COMMAND_TIMEOUT_MS / portTICK_PERIOD_MS);
+            for (int i = 0; i < (DEFAULT_AT_COMMAND_TIMEOUT_MS / 100); i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
         }
     }
     
@@ -110,15 +120,24 @@ bool GsmService::initialize() {
         if (DTR_PIN != -1) {
             pinMode(DTR_PIN, OUTPUT);
             digitalWrite(DTR_PIN, HIGH);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            for (int i = 0; i < 10; i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
             digitalWrite(DTR_PIN, LOW);
-            vTaskDelay(DEFAULT_AT_COMMAND_TIMEOUT_MS / portTICK_PERIOD_MS);
+            for (int i = 0; i < (DEFAULT_AT_COMMAND_TIMEOUT_MS / 100); i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
             
             // 复位后再次尝试通信
             clearSerialBuffer();
             simSerial.print("AT\r\n");
             simSerial.flush();
-            vTaskDelay(500 / portTICK_PERIOD_MS);
+            for (int i = 0; i < 5; i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
             
             String resetResponse = waitForResponse(DEFAULT_GSM_INIT_TIMEOUT_MS);
             if (resetResponse.indexOf("OK") != -1) {
@@ -142,27 +161,39 @@ bool GsmService::initialize() {
     // 保持回显开启，确保通信稳定
     Serial.println("保持AT命令回显开启，确保通信稳定");
     
-    // 等待模块稳定
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    // 等待模块稳定，期间重置看门狗
+    for (int i = 0; i < 20; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     
-    // 设置短信PDU模式（用于PDU解码）
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    // 设置短信PDU模式（用于PDU解码），期间重置看门狗
+    for (int i = 0; i < 5; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     if (sendAtCommand("AT+CMGF=0", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 短信PDU模式已设置");
     } else {
         Serial.println("⚠️ 短信PDU模式设置失败");
     }
     
-    // 配置短信通知模式
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    // 配置短信通知模式，期间重置看门狗
+    for (int i = 0; i < 5; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     if (sendAtCommand("AT+CNMI=2,2,0,0,0", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 短信通知模式已配置");
     } else {
         Serial.println("⚠️ 短信通知模式配置失败");
     }
     
-    // 获取短信中心号码
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    // 获取短信中心号码，期间重置看门狗
+    for (int i = 0; i < 5; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     smsCenterNumber = getSmsCenterNumber();
     if (smsCenterNumber.length() > 0) {
         Serial.printf("✓ 短信中心号码: %s\n", smsCenterNumber.c_str());
@@ -170,16 +201,22 @@ bool GsmService::initialize() {
         Serial.println("⚠️ 无法获取短信中心号码");
     }
     
-    // 启用电话功能
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    // 启用电话功能，期间重置看门狗
+    for (int i = 0; i < 5; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     if (sendAtCommand("AT+CLIP=1", "OK", DEFAULT_GSM_INIT_TIMEOUT_MS)) {
         Serial.println("✓ 来电显示已启用");
     } else {
         Serial.println("⚠️ 来电显示启用失败");
     }
     
-    // 启用网络功能
-    vTaskDelay(500 / portTICK_PERIOD_MS);
+    // 启用网络功能，期间重置看门狗
+    for (int i = 0; i < 5; i++) {
+        esp_task_wdt_reset();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
     if (sendAtCommand("AT+CGATT=1", "OK", 8000)) {
         Serial.println("✓ 网络附着已启用");
     } else {
@@ -204,17 +241,11 @@ bool GsmService::sendAtCommand(const String& command, const String& expectedResp
     // 清空缓冲区
     clearSerialBuffer();
     
-    // 发送命令前等待，确保模块准备就绪
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-    
     // 发送命令
     simSerial.print(command);
     simSerial.print("\r\n");
     simSerial.flush(); // 确保数据发送完毕
     Serial.printf("发送AT命令: %s\n", command.c_str());
-    
-    // 发送命令后等待，让模块开始处理
-    vTaskDelay(300 / portTICK_PERIOD_MS);
     
     String response = waitForResponse(timeout);
     
@@ -238,17 +269,11 @@ String GsmService::sendAtCommandWithResponse(const String& command, unsigned lon
     // 清空缓冲区
     clearSerialBuffer();
     
-    // 发送命令前等待，确保模块准备就绪
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-    
     // 发送命令
     simSerial.print(command);
     simSerial.print("\r\n");
     simSerial.flush(); // 确保数据发送完毕
     Serial.printf("发送AT命令: %s\n", command.c_str());
-    
-    // 发送命令后等待，让模块开始处理
-    vTaskDelay(300 / portTICK_PERIOD_MS);
     
     return waitForResponse(timeout);
 }
@@ -572,6 +597,9 @@ String GsmService::waitForResponse(unsigned long timeout) {
     Serial.printf("等待响应，超时时间: %lu ms\n", timeout);
     
     while (millis() - startTime < timeout) {
+        // 重置看门狗以防止超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             if (!dataReceived) {
                 dataReceived = true;
@@ -609,6 +637,9 @@ String GsmService::waitForResponse(unsigned long timeout) {
                     unsigned long waitStart = millis();
                     bool foundOK = false;
                     while (millis() - waitStart < 500) { // 等待500ms
+                        // 重置看门狗
+                        esp_task_wdt_reset();
+                        
                         if (simSerial.available()) {
                             char c = simSerial.read();
                             response += c;

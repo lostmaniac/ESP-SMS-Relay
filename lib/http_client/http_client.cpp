@@ -9,6 +9,7 @@
 #include "gsm_service.h"
 #include "../../include/constants.h"
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 /**
  * @brief 构造函数
@@ -112,7 +113,12 @@ HttpResponse HttpClient::request(const HttpRequest& request) {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
         if (attempt > 0) {
             debugPrint("HTTP请求重试第 " + String(attempt) + " 次");
-            delay(retryDelay);
+            // 在延时期间重置看门狗
+            unsigned long delayStart = millis();
+            while (millis() - delayStart < retryDelay) {
+                esp_task_wdt_reset();
+                delay(100);
+            }
         }
         
         // 检查网络连接状态
@@ -122,6 +128,7 @@ HttpResponse HttpClient::request(const HttpRequest& request) {
             // 等待网络恢复，最多等待10秒
             unsigned long networkWaitStart = millis();
             while (!isNetworkConnected() && (millis() - networkWaitStart) < 10000) {
+                esp_task_wdt_reset();
                 delay(1000);
             }
             
@@ -515,11 +522,20 @@ HttpResponse HttpClient::executeHttpAction(HttpClientMethod method, unsigned lon
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
         if (attempt > 0) {
             debugPrint("HTTP动作重试第 " + String(attempt) + " 次");
-            delay(retryDelay);
+            // 在延时期间重置看门狗
+            unsigned long delayStart = millis();
+            while (millis() - delayStart < retryDelay) {
+                esp_task_wdt_reset();
+                delay(100);
+            }
             
             // 重试前重新初始化HTTP服务
             terminateHttpService();
-            delay(500);
+            // 在延时期间重置看门狗
+            for (int i = 0; i < 5; i++) {
+                esp_task_wdt_reset();
+                delay(100);
+            }
             if (!initHttpService()) {
                 debugPrint("重试时HTTP服务初始化失败");
                 continue;
@@ -619,11 +635,20 @@ bool HttpClient::sendHttpData(const String& data, unsigned long timeout) {
             
             if (attempt < MAX_RETRY_COUNT) {
                 debugPrint("等待 " + String(httpRetryDelay) + "ms 后重试...");
-                delay(httpRetryDelay);
+                // 在延时期间重置看门狗
+                unsigned long delayStart = millis();
+                while (millis() - delayStart < httpRetryDelay) {
+                    esp_task_wdt_reset();
+                    delay(100);
+                }
                 
                 // 尝试重新初始化HTTP服务
                 terminateHttpService();
-                delay(500);
+                // 在延时期间重置看门狗
+                for (int i = 0; i < 5; i++) {
+                    esp_task_wdt_reset();
+                    delay(100);
+                }
                 if (!initHttpService()) {
                     debugPrint("重新初始化HTTP服务失败");
                     continue;
@@ -651,7 +676,12 @@ bool HttpClient::sendHttpData(const String& data, unsigned long timeout) {
         
         if (attempt < MAX_RETRY_COUNT) {
             debugPrint("等待 " + String(httpRetryDelay) + "ms 后重试...");
-            delay(httpRetryDelay);
+            // 在延时期间重置看门狗
+            unsigned long delayStart = millis();
+            while (millis() - delayStart < httpRetryDelay) {
+                esp_task_wdt_reset();
+                delay(100);
+            }
         } else {
             setError(errorMsg);
             return false;

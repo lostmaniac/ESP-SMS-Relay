@@ -305,7 +305,47 @@ async function deleteRule(ruleId) {
 }
 
 function loadLogs() { document.getElementById('content').innerHTML = '<h2>系统日志</h2><p>此功能待实现。</p>'; }
-function loadStatus() { document.getElementById('content').innerHTML = '<h2>系统状态</h2><p>此功能待实现。</p>'; }
+
+function loadStatus() {
+    document.getElementById('content').innerHTML = '<h2>系统状态</h2><div id="status-loading">正在加载系统状态...</div>';
+    
+    fetch('/api/system_status')
+        .then(response => response.json())
+        .then(data => {
+            let html = '<h2>系统状态</h2>';
+            
+            // Flash存储信息
+            html += '<div class="status-section">';
+            html += '<h3>Flash存储空间</h3>';
+            html += '<div class="progress-container">';
+            html += '<div class="progress-label">存储使用率: ' + data.flash.usage_percent.toFixed(1) + '%</div>';
+            html += '<div class="progress-bar">';
+            html += '<div class="progress-fill" style="width: ' + data.flash.usage_percent + '%"></div>';
+            html += '</div>';
+            html += '<div class="progress-details">已用: ' + formatBytes(data.flash.used) + ' / 总计: ' + formatBytes(data.flash.total) + ' / 剩余: ' + formatBytes(data.flash.free) + '</div>';
+            html += '</div>';
+            html += '</div>';
+            
+            // 添加刷新按钮
+            html += '<div class="status-section">';
+            html += '<button onclick="loadStatus()" class="btn">刷新状态</button>';
+            html += '</div>';
+            
+            document.getElementById('content').innerHTML = html;
+        })
+        .catch(error => {
+            console.error('Error loading system status:', error);
+            document.getElementById('content').innerHTML = '<h2>系统状态</h2><p style="color: red;">加载系统状态失败: ' + error.message + '</p>';
+        });
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 function loadDatabase() {
     const content = document.getElementById('content');

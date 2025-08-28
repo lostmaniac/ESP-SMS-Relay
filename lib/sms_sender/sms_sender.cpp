@@ -8,6 +8,7 @@
 
 #include "sms_sender.h"
 #include "constants.h"
+#include "esp_task_wdt.h"
 #include <HardwareSerial.h>
 
 // 引用外部声明的串口对象
@@ -333,6 +334,9 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
     if (wait_for_prompt) {
         // 等待'>'提示符
         while (millis() - start_time < timeout) {
+            // 重置看门狗，防止长时间等待导致超时
+            esp_task_wdt_reset();
+            
             if (simSerial.available()) {
                 char c = simSerial.read();
                 if (c == '>') {
@@ -344,6 +348,9 @@ bool SmsSender::sendAtCommand(const String& command, const String& expected_resp
     } else {
         // 等待期望的响应
         while (millis() - start_time < timeout) {
+            // 重置看门狗，防止长时间等待导致超时
+            esp_task_wdt_reset();
+            
             if (simSerial.available()) {
                 char c = simSerial.read();
                 response += c;
@@ -387,6 +394,9 @@ bool SmsSender::sendPduData(const char* pdu_data, int tpdu_length) {
     String response = "";
     
     while (millis() - start_time < DEFAULT_SMS_SEND_TIMEOUT_MS) { // SMS发送超时
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;
@@ -481,6 +491,9 @@ bool SmsSender::sendTextData(const String& recipient, const String& message) {
     bool send_success = false;
     
     while (millis() - start_time < DEFAULT_SMS_SEND_TIMEOUT_MS) { // SMS发送超时
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (simSerial.available()) {
             char c = simSerial.read();
             response += c;

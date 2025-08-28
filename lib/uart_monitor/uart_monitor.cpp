@@ -3,6 +3,7 @@
 #include "../../include/constants.h"
 #include "uart_dispatcher.h"
 #include "terminal_manager.h"
+#include "esp_task_wdt.h"
 
 extern HardwareSerial simSerial;
 UartDispatcher dispatcher;
@@ -67,6 +68,9 @@ void uart_monitor_task(void *pvParameters) {
             // 在AT命令模式下，非短信相关的数据会被忽略，避免干扰CLI
         }
     }
+    
+    // 重置看门狗，防止任务超时
+    esp_task_wdt_reset();
     
     vTaskDelay(50 / portTICK_PERIOD_MS); // 增加延时以允许更多数据到达缓冲区
   }

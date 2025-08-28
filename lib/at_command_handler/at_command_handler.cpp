@@ -6,6 +6,7 @@
  */
 
 #include "at_command_handler.h"
+#include "esp_task_wdt.h"
 #include "../../include/constants.h"
 #include <Arduino.h>
 
@@ -230,6 +231,9 @@ AtResponse AtCommandHandler::waitForResponse(const String& expectedResponse,
     
     // 优化的等待逻辑：一旦收到期望响应就立即返回
     while (millis() - startTime < timeout) {
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (serialPort.available()) {
             char c = serialPort.read();
             rawResponse += c;
@@ -316,6 +320,9 @@ String AtCommandHandler::readResponse(unsigned long timeout) {
     bool hasData = false;
     
     while (millis() - startTime < timeout) {
+        // 重置看门狗，防止长时间等待导致超时
+        esp_task_wdt_reset();
+        
         if (serialPort.available()) {
             char c = serialPort.read();
             response += c;

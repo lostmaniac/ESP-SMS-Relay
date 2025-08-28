@@ -10,6 +10,7 @@
 #include "../../http_client/http_client.h"
 #include "../../../include/constants.h"
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 
 /**
  * @brief 构造函数
@@ -94,9 +95,12 @@ PushResult WechatOfficialChannel::push(const String& config, const PushContext& 
             successCount++;
         }
         
-        // 避免频率限制，添加延迟
+        // 避免频率限制，添加延迟，期间重置看门狗
         if (totalCount > 1) {
-            delay(100);
+            for (int i = 0; i < 10; i++) {
+                esp_task_wdt_reset();
+                vTaskDelay(1);
+            }
         }
     }
     
